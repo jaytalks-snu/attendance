@@ -446,7 +446,6 @@ function selectSession(i){
   const s=state.sessions[i];
   document.getElementById('sel-session-label').textContent=`Day ${i+1}${s.date?' · '+fmtDate(s.date):''}`;
 }
-
 // ── Hour grid ─────────────────────────────────────────────────────────────────
 function renderHourGrid(){
   const si=state.selectedSession;
@@ -566,7 +565,20 @@ function renderSessionsTable(){
     `<tr><td>Day ${i+1}</td><td><input type="date" value="${s.date||''}" onchange="updateSessionDate(${i},this.value)"></td></tr>`
   ).join('');
 }
-function updateSessionDate(i,val){state.sessions[i].date=val;sv('att_sessions',state.sessions);renderSessionChips();}
+function updateSessionDate(i,val){
+  state.sessions[i].date=val;
+  sv('att_sessions',state.sessions);
+  renderSessionChips();
+  // Refresh QR if this session is currently active
+  if(state.selectedSession===i&&state.selectedHour!==null){
+    generateQR(i,state.selectedHour);
+    const s=state.sessions[i];
+    document.getElementById('qr-context-label').textContent=
+      `Day ${i+1}${s.date?' · '+fmtDate(s.date):''} · Hour ${state.selectedHour+1}`;
+    document.getElementById('sel-session-label').textContent=
+      `Day ${i+1}${s.date?' · '+fmtDate(s.date):''}`;
+  }
+}
 
 function renderHourTimeInputs(){
   document.getElementById('hour-time-card').innerHTML=state.hours.map((h,i)=>
@@ -576,7 +588,13 @@ function renderHourTimeInputs(){
     </div>`
   ).join('');
 }
-function updateHourTime(i,val){state.hours[i].time=val;sv('att_hours',state.hours);if(state.selectedSession!==null)renderHourGrid();}
+function updateHourTime(i,val){
+  state.hours[i].time=val;
+  sv('att_hours',state.hours);
+  if(state.selectedSession!==null)renderHourGrid();
+  if(state.selectedSession!==null&&state.selectedHour===i)
+    generateQR(state.selectedSession,i);
+}
 
 // ── Records ───────────────────────────────────────────────────────────────────
 function buildFilterOptions(){

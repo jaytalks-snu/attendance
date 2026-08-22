@@ -252,6 +252,20 @@ function stopScanner(){
 }
 function onScanSuccess(raw){if(Date.now()-lastScanTime<3000)return;lastScanTime=Date.now();processCheckIn(raw);}
 
+// ── Google Sheets sync ────────────────────────────────────────────────────────
+// URL is set by the teacher in teacher.html Settings → Google Sheets sync
+function getScriptURL(){return localStorage.getItem('att_script_url')||'';}
+
+function sendToSheet(payload) {
+  const url=getScriptURL();
+  if (!url) return;
+  fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify(payload),
+  }).catch(() => {});
+}
+
 // ── Check-in ──────────────────────────────────────────────────────────────────
 function showResult(type,icon,msg){const el=document.getElementById('scan-result');el.className='result-box show '+type;el.innerHTML=`<span class="result-icon">${icon}</span>${msg}`;}
 
@@ -295,8 +309,23 @@ function recordAttendance(name,si,hi,dist){
   const now=new Date();
   attendance[name][si][hi]={time:now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),date:now.toLocaleDateString(),dist:dist!==null?Math.round(dist):null};
   sv('att_records',attendance);
-  // Notify teacher page (works across tabs and within same browser)
+  // Notify teacher page
   if(typeof BroadcastChannel!=='undefined'){try{new BroadcastChannel('att_sync').postMessage('att_records');}catch(e){}}
+  // Send to Google Sheet
+  const course=ld('att_course_pub',{});
+  sendToSheet({
+    action:'checkin',
+    name,
+    session:si,
+    hour:hi,
+    sessionDate:getSessions()[si]?.date||'',
+    hourLabel:getHours()[hi]?.time||('Hour '+(hi+1)),
+    checkInTime:attendance[name][si][hi].time,
+    dist:dist!==null?Math.round(dist):null,
+    courseTitle:course.title||'',
+    courseNumber:course.number||'',
+    teacherName:course.teacher||'',
+  });
   setSavedName(name); renderNameCard();
   const s=getSessions()[si];
   const geoNote=dist!==null?` · ${Math.round(dist)}m from classroom`:'';

@@ -275,6 +275,17 @@
       </div>
     </div>
 
+    <div class="section-label">Google Sheets sync</div>
+    <div class="card">
+      <div class="settings-note" style="margin-bottom:10px;">Paste your Apps Script Web App URL here to sync attendance to Google Sheets automatically.</div>
+      <div class="field-group">
+        <div class="field-label">Apps Script Web App URL</div>
+        <input type="text" id="script-url" placeholder="https://script.google.com/macros/s/…/exec" style="width:100%;font-size:11px;" oninput="saveScriptURL()">
+      </div>
+      <div id="script-url-msg" style="font-size:12px;font-family:monospace;display:none;"></div>
+      <button class="btn btn-sm" onclick="testScriptURL()">Test connection</button>
+    </div>
+
     <div class="section-label">Change password</div>
     <div class="card">
       <div class="field-group"><div class="field-label">New password</div><input type="password" id="new-pw" style="width:100%;"></div>
@@ -350,6 +361,7 @@ function initApp(){
   document.getElementById('course-title').value=state.courseTitle;
   document.getElementById('course-number').value=state.courseNumber;
   document.getElementById('teacher-name').value=state.teacherName;
+  document.getElementById('script-url').value=localStorage.getItem('att_script_url')||'';
   document.getElementById('geo-radius').addEventListener('input',updateGeoBadge);
   updateHeader(); updateStudentURL(); renderSessionChips(); renderSessionsTable(); renderHourTimeInputs();
 }
@@ -471,6 +483,28 @@ function startTimer(){
     document.getElementById('timer-label').textContent=rem>0?`Refreshes in ${Math.ceil(rem/1000)}s`:'Refreshing…';
     if(rem<=2000&&state.selectedSession!==null&&state.selectedHour!==null)generateQR(state.selectedSession,state.selectedHour);
   },1000);
+}
+
+// ── Google Sheets URL ─────────────────────────────────────────────────────────
+function saveScriptURL(){
+  const url=document.getElementById('script-url').value.trim();
+  localStorage.setItem('att_script_url',url);
+  const msg=document.getElementById('script-url-msg');
+  msg.style.display=url?'block':'none';
+  msg.style.color='var(--text-muted)';
+  msg.textContent=url?'URL saved. Students will sync to this sheet on check-in.':'';
+}
+function testScriptURL(){
+  const url=localStorage.getItem('att_script_url')||'';
+  const msg=document.getElementById('script-url-msg');
+  msg.style.display='block';
+  if(!url){msg.style.color='var(--red)';msg.textContent='No URL saved yet.';return;}
+  msg.style.color='var(--text-muted)';msg.textContent='Testing…';
+  fetch(url+'?test=1').then(r=>r.text()).then(()=>{
+    msg.style.color='var(--green)';msg.textContent='✓ Connection successful!';
+  }).catch(()=>{
+    msg.style.color='var(--amber)';msg.textContent='Could not reach the URL — check it is deployed as "Anyone" access.';
+  });
 }
 
 // ── Geo ───────────────────────────────────────────────────────────────────────

@@ -135,6 +135,10 @@
   .geo-info { font-size: 12px; color: var(--text-muted); font-family: monospace; margin-top: 8px; }
 
   /* Sessions table */
+  .test-banner { display:none; background: var(--amber-bg); border: 1.5px dashed var(--amber-border); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 12px; }
+  .test-banner.visible { display: flex; align-items: center; gap: 10px; }
+  .test-banner-text { flex: 1; font-family: monospace; font-size: 12px; color: var(--amber); line-height: 1.5; }
+  .test-banner-icon { font-size: 18px; flex-shrink: 0; }
   .sess-table { width: 100%; border-collapse: collapse; }
   .sess-table td { padding: 5px 4px; }
   .sess-table td:first-child { font-family: monospace; font-size: 11px; color: var(--text-faint); width: 50px; }
@@ -163,8 +167,15 @@
       <p id="hdr-sub">Teacher Dashboard</p>
     </div>
     <span class="header-tag">Teacher</span>
+    <button class="btn btn-sm" id="test-mode-btn" onclick="toggleTestMode()" style="margin-left:4px;">🧪 Test</button>
     <button class="btn btn-sm" onclick="logout()">Sign out</button>
   </header>
+
+  <div id="test-mode-banner" class="test-banner">
+    <span class="test-banner-icon">🧪</span>
+    <span class="test-banner-text"><strong>Testing mode ON</strong> — geofencing disabled. Students can check in from anywhere. Remember to turn this off before real class.</span>
+    <button class="btn btn-sm" onclick="toggleTestMode()" style="flex-shrink:0;">Turn off</button>
+  </div>
 
   <div class="tab-bar">
     <div class="tab active" onclick="switchTab('qr')">QR Codes</div>
@@ -364,6 +375,7 @@ function initApp(){
   document.getElementById('script-url').value=localStorage.getItem('att_script_url')||'';
   document.getElementById('geo-radius').addEventListener('input',updateGeoBadge);
   updateHeader(); updateStudentURL(); renderSessionChips(); renderSessionsTable(); renderHourTimeInputs();
+  applyTestMode();
 }
 
 function saveCourseInfo(){
@@ -457,12 +469,15 @@ function selectHour(i){
 
 // ── QR ────────────────────────────────────────────────────────────────────────
 function makeToken(si,hi){
+  const testMode=isTestMode();
   return JSON.stringify({
     session:si, hour:hi,
-    geo:state.geoEnabled, lat:state.classroomLat, lng:state.classroomLng, radius:state.geoRadius,
+    geo: testMode ? false : state.geoEnabled,
+    lat:state.classroomLat, lng:state.classroomLng, radius:state.geoRadius,
     ts:Date.now(), nonce:Math.random().toString(36).slice(2,10),
     courseTitle:state.courseTitle, courseNumber:state.courseNumber, teacherName:state.teacherName,
     sessionDate:state.sessions[si]?.date||'',
+    testMode,
   });
 }
 function generateQR(si,hi){
@@ -483,6 +498,26 @@ function startTimer(){
     document.getElementById('timer-label').textContent=rem>0?`Refreshes in ${Math.ceil(rem/1000)}s`:'Refreshing…';
     if(rem<=2000&&state.selectedSession!==null&&state.selectedHour!==null)generateQR(state.selectedSession,state.selectedHour);
   },1000);
+}
+
+// ── Testing mode ──────────────────────────────────────────────────────────────
+function isTestMode(){return localStorage.getItem('att_test_mode')==='1';}
+function toggleTestMode(){
+  const on=!isTestMode();
+  localStorage.setItem('att_test_mode', on?'1':'0');
+  applyTestMode();
+  // Regenerate active QR so the new geo setting takes effect immediately
+  if(state.selectedSession!==null&&state.selectedHour!==null)
+    generateQR(state.selectedSession,state.selectedHour);
+}
+function applyTestMode(){
+  const on=isTestMode();
+  document.getElementById('test-mode-banner').classList.toggle('visible',on);
+  const btn=document.getElementById('test-mode-btn');
+  btn.textContent=on?'🧪 Testing ON':'🧪 Test';
+  btn.style.background=on?'var(--amber-bg)':'';
+  btn.style.borderColor=on?'var(--amber-border)':'';
+  btn.style.color=on?'var(--amber)':'';
 }
 
 // ── Google Sheets URL ─────────────────────────────────────────────────────────

@@ -223,6 +223,7 @@
         <option value="all">All sessions</option>
       </select>
       <button class="btn btn-sm" onclick="renderRecords()">↺ Refresh</button>
+      <button class="btn btn-sm" style="color:var(--amber);border-color:var(--amber-border);" onclick="openManualPanel(0,'all',null)">✏️ 수동 출석</button>
       <button class="btn btn-sm" onclick="exportCSV()">Export CSV</button>
       <button class="btn btn-sm btn-danger" onclick="clearRecords()">Clear all</button>
     </div>
@@ -728,9 +729,7 @@ function renderRecordsFromData(attendance){
 
   let hdr='';
   if(fs==='all'){
-    hdr=state.sessions.map((s,i)=>`<th title="Day ${i+1}${s.date?' · '+fmtDate(s.date):''}">
-      D${i+1}<button onclick="openManualPanel(${i},'all')" title="Day ${i+1} 전체 출석 처리" style="margin-left:4px;background:none;border:none;cursor:pointer;font-size:10px;color:var(--amber);">✏️</button>
-    </th>`).join('');
+    hdr=state.sessions.map((s,i)=>`<th title="Day ${i+1}${s.date?' · '+fmtDate(s.date):''}">D${i+1}</th>`).join('');
   } else {
     hdr=state.hours.map((h,i)=>`<th>H${i+1}</th>`).join('');
   }
@@ -892,7 +891,6 @@ function applyManualAttendance(){
 
   targets.forEach(name=>{
     hours.forEach(hi=>{
-      if(state.attendance[name]?.[si]?.[hi])return; // 이미 출석
       if(url){
         const params=new URLSearchParams({
           action:'checkin',name,previousName:'',
@@ -916,7 +914,7 @@ function applyManualAttendance(){
     });
   });
 
-  if(sent===0){alert('선택한 학생들은 이미 모두 출석 처리되어 있습니다.');return;}
+  if(sent===0){alert('출석 처리할 학생이 없습니다.');return;}
   setRecordsStatus(`${targets.length}명 · ${sent}건 처리 중…`,'var(--amber)');
   closeManualPanel();
   setTimeout(()=>renderRecords(),3000);

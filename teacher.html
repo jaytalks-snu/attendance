@@ -133,6 +133,26 @@
   .filter-bar select { padding: 6px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius); font-size: 12px; background: var(--surface); color: var(--text); font-family: monospace; }
   .empty-state { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 13px; font-family: monospace; }
   .divider { height: 1px; background: var(--border); margin: 12px 0; }
+
+  /* Student detail panel */
+  .detail-panel { display:none; margin-bottom:12px; }
+  .detail-panel.open { display:block; }
+  .detail-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .detail-name { font-size:15px; }
+  .detail-stats { font-family:monospace; font-size:12px; color:var(--text-muted); margin-top:2px; }
+  .detail-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+  .detail-session { border:1px solid var(--border); border-radius:var(--radius); padding:10px 12px; }
+  .detail-session.full { border-color:var(--green-border); background:var(--green-bg); }
+  .detail-session.partial { border-color:var(--amber-border); background:var(--amber-bg); }
+  .detail-session.absent { border-color:var(--red-border); background:var(--red-bg); }
+  .ds-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; }
+  .ds-day { font-family:monospace; font-size:11px; font-weight:500; }
+  .ds-day.full { color:var(--green); } .ds-day.partial { color:var(--amber); } .ds-day.absent { color:var(--red); }
+  .ds-date { font-family:monospace; font-size:10px; color:var(--text-faint); }
+  .ds-hours { display:flex; flex-direction:column; gap:3px; }
+  .ds-hour { display:flex; justify-content:space-between; font-size:11px; font-family:monospace; color:var(--text-muted); }
+  .ds-hour.present { color:var(--green); }
+  .name-link { cursor:pointer; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:2px; }
   .geo-info { font-size: 12px; color: var(--text-muted); font-family: monospace; margin-top: 8px; }
 
   /* Sessions table */
@@ -258,6 +278,18 @@
 
     <div class="card" style="padding:0;overflow:auto;">
       <div id="records-table-wrap"></div>
+    </div>
+
+    <!-- Student detail panel -->
+    <div class="card detail-panel" id="detail-panel">
+      <div class="detail-header">
+        <div>
+          <div class="detail-name" id="detail-name"></div>
+          <div class="detail-stats" id="detail-stats"></div>
+        </div>
+        <button class="btn btn-sm" onclick="closeDetailPanel()">닫기</button>
+      </div>
+      <div class="detail-grid" id="detail-grid"></div>
     </div>
   </div>
 
@@ -752,7 +784,7 @@ function renderRecordsFromData(attendance){
     }
     const pct=pos>0?Math.round(tot/pos*100):0;
     const col=pct<75?'var(--red)':pct<100?'var(--amber)':'var(--green)';
-    return `<tr><td style="font-size:13px;">${name}</td>${cells}<td style="font-family:monospace;font-size:11px;color:var(--text-muted);">${tot}/${pos}</td><td style="font-family:monospace;font-size:11px;color:${col};">${pct}%</td></tr>`;
+    return `<tr><td style="font-size:13px;"><span class="name-link" onclick="openDetailPanel('${name.replace(/'/g,"\\'")}')">${name}</span></td>${cells}<td style="font-family:monospace;font-size:11px;color:var(--text-muted);">${tot}/${pos}</td><td style="font-family:monospace;font-size:11px;color:${col};">${pct}%</td></tr>`;
   }).join('');
 
   wrap.innerHTML=`<table class="rec-table"><thead><tr><th>Student</th>${hdr}<th>Total</th><th>Rate</th></tr></thead><tbody>${rows}</tbody></table>`;
@@ -827,6 +859,52 @@ function exportCSV(){
 function clearRecords(){
   if(!confirm('Clear ALL attendance for all sessions? This clears local data only — delete rows in Google Sheets manually if needed.'))return;
   state.attendance={};sv('att_records',{});renderRecords();renderSessionChips();
+}
+
+// ── Student detail panel ──────────────────────────────────────────────────────
+function openDetailPanel(name){
+  const rec=state.attendance[name]||{};
+  let tot=0,pos=0;
+  state.sessions.forEach((_,si)=>{
+    state.hours.forEach((_,hi)=>{pos++;if(rec[si]&&rec[si][hi])tot++;});
+  });
+  const pct=pos>0?Math.round(tot/pos*100):0;
+  const col=pct<75?'var(--red)':pct<100?'var(--amber)':'var(--green)';
+
+  document.getElementById('detail-name').textContent='👤 '+name;
+  document.getElementById('detail-stats').innerHTML=
+    `출석 ${tot}/${pos}시간 &nbsp;·&nbsp; <span style="color:${col};font-weight:500;">${pct}%</span>`;
+
+  const grid=document.getElementById('detail-grid');
+  grid.innerHTML=state.sessions.map((s,si)=>{
+    const sr=rec[si]||{};
+    const hrs=Object.keys(sr).length;
+    const cls=hrs===4?'full':hrs>0?'partial':'absent';
+    const dayCls=cls;
+    const dateStr=s.date?fmtDate(s.date):'날짜 미정';
+    const hourRows=state.hours.map((h,hi)=>{
+      const r=sr[hi];
+      return `<div class="ds-hour${r?' present':''}">
+        <span>${h.time}</span>
+        <span>${r?'✓ '+r.time:'결석'}</span>
+      </div>`;
+    }).join('');
+    return `<div class="detail-session ${cls}">
+      <div class="ds-head">
+        <span class="ds-day ${dayCls}">Day ${si+1} &nbsp;${hrs}/4</span>
+        <span class="ds-date">${dateStr}</span>
+      </div>
+      <div class="ds-hours">${hourRows}</div>
+    </div>`;
+  }).join('');
+
+  const panel=document.getElementById('detail-panel');
+  panel.classList.add('open');
+  panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+function closeDetailPanel(){
+  document.getElementById('detail-panel').classList.remove('open');
 }
 
 // ── Manual attendance ─────────────────────────────────────────────────────────

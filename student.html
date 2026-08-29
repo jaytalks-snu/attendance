@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Attendance Check-In</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -44,37 +43,12 @@
   .name-display .name-edit { font-family: monospace; font-size: 11px; color: var(--text-muted); cursor: pointer; text-decoration: underline; background: none; border: none; padding: 0; }
   .name-display .name-edit:hover { color: var(--text); }
 
-  /* Camera */
-  #reader-container { border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); background: #111; position: relative; display: none; margin-bottom: 12px; }
-  #reader { width: 100% !important; }
-  #reader video { width: 100% !important; border-radius: 0 !important; }
-  #reader img { display: none !important; }
-  #reader > div { border: none !important; box-shadow: none !important; }
-  .scan-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
-  .scan-frame { width: 200px; height: 200px; border: 2px solid rgba(255,255,255,0.7); border-radius: 14px; animation: pulse 2s ease-in-out infinite; }
-  @keyframes pulse { 0%,100%{opacity:0.4;}50%{opacity:0.9;} }
-
-  .camera-status { font-family: monospace; font-size: 12px; color: var(--text-muted); text-align: center; padding: 6px 0 10px; }
-  .btn-row { display: flex; gap: 8px; justify-content: center; }
-  .btn { padding: 10px 20px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); color: var(--text); font-size: 14px; font-family: 'Georgia', serif; cursor: pointer; transition: all 0.15s; }
-  .btn:hover { background: var(--surface2); }
-  .btn-primary { background: var(--text); color: white; border-color: var(--text); }
-  .btn-primary:hover { opacity: 0.85; }
-  .btn-full { width: 100%; }
-
-  /* Result */
   .result-box { padding: 14px 16px; border-radius: var(--radius); font-size: 14px; line-height: 1.6; display: none; margin-top: 12px; }
   .result-box.show { display: block; }
   .result-box.success { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
   .result-box.error { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-border); }
   .result-box.warn { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-border); }
   .result-icon { font-size: 20px; display: block; margin-bottom: 6px; }
-
-  /* Geo pill */
-  .geo-pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 99px; font-family: monospace; font-size: 11px; }
-  .geo-pill.checking { background: var(--surface2); color: var(--text-muted); border: 1px solid var(--border-strong); }
-  .geo-pill.ok { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
-  .geo-pill.fail { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-border); }
 
   /* History — 8-session grid */
   .history-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
@@ -87,27 +61,10 @@
   .hc-dot { width: 10px; height: 10px; border-radius: 50%; border: 1px solid var(--border); }
   .hc-dot.p { background: var(--green); border-color: var(--green); }
 
-  /* Gate */
-  #gate-screen { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 999; padding: 20px; }
-  .gate-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 28px 24px; max-width: 340px; width: 100%; text-align: center; }
-  .gate-icon { font-size: 32px; margin-bottom: 12px; }
-  .gate-card h2 { font-size: 17px; font-weight: normal; margin-bottom: 8px; }
-  .gate-card p { font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px; }
-
   .note { font-size: 11px; color: var(--text-faint); font-family: monospace; text-align: center; margin-top: 8px; }
 </style>
 </head>
 <body>
-
-<div id="gate-screen" style="display:none;">
-  <div class="gate-card">
-    <div class="gate-icon">🔒</div>
-    <h2>Classroom access only</h2>
-    <p>This check-in page can only be used inside the classroom. Please make sure you are physically present and try again.</p>
-    <button class="btn btn-primary btn-full" onclick="retryGate()">Try again</button>
-    <div id="gate-msg" style="font-size:12px;font-family:monospace;color:var(--text-muted);margin-top:10px;"></div>
-  </div>
-</div>
 
 <header>
   <div class="header-top">
@@ -125,29 +82,8 @@
   <div class="section-label">Your name</div>
   <div class="card" id="name-card"></div>
 
-  <!-- Auto check-in result (shown when arriving via QR scan URL) -->
   <div id="auto-result-box" class="result-box" style="margin-bottom:14px;"></div>
   <button id="auto-checkin-btn" class="btn btn-primary btn-full" style="display:none;margin-bottom:14px;">Complete check-in</button>
-
-  <div style="text-align:center;margin-bottom:14px;">
-    <span class="geo-pill checking" id="geo-pill">Checking location…</span>
-  </div>
-
-  <div class="section-label">Scan QR code</div>
-  <div class="card">
-    <div id="reader-container">
-      <div id="reader"></div>
-      <div class="scan-overlay"><div class="scan-frame"></div></div>
-    </div>
-    <div class="camera-status" id="camera-status">Camera not started</div>
-    <div class="btn-row">
-      <button class="btn btn-primary btn-full" id="start-btn" onclick="startScanner()">Start camera</button>
-      <button class="btn" id="stop-btn" onclick="stopScanner()" style="display:none;">Stop</button>
-    </div>
-    <div class="result-box" id="scan-result"></div>
-    <div id="test-mode-note" style="display:none;margin-top:10px;padding:8px 12px;background:var(--amber-bg);border:1px solid var(--amber-border);border-radius:var(--radius);font-family:monospace;font-size:11px;color:var(--amber);">🧪 Testing mode — geofencing is off</div>
-    <div class="note">Requires HTTPS or localhost.</div>
-  </div>
 
   <div class="section-label">My attendance — all sessions</div>
   <div class="card">
@@ -201,61 +137,8 @@ function renderNameCard(){
 }
 function editName(){clearSavedName();renderNameCard();setTimeout(()=>{const i=document.getElementById('student-name');if(i)i.focus();},50);}
 
-// ── Geo gate ──────────────────────────────────────────────────────────────────
-let studentGeoResult=null;
+// ── Geolocation util ─────────────────────────────────────────────────────────
 function haversine(a,b,c,d){const R=6371000,dL=(c-a)*Math.PI/180,dl=(d-b)*Math.PI/180,x=Math.sin(dL/2)**2+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dl/2)**2;return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));}
-function updateGeoPill(s,t){const p=document.getElementById('geo-pill');p.className='geo-pill '+s;p.textContent=t;}
-
-function checkPageAccess(){
-  const lat=parseFloat(localStorage.getItem('classroom_lat'));
-  const lng=parseFloat(localStorage.getItem('classroom_lng'));
-  if(isNaN(lat)||isNaN(lng)){updateGeoPill('checking','Location check on scan');return;}
-  const saved=ld('att_token',null);
-  if(!saved||!saved.token){updateGeoPill('checking','Waiting for QR');return;}
-  let token;try{token=JSON.parse(saved.token);}catch{return;}
-  if(!token.geo){updateGeoPill('ok','No geofence required');return;}
-  if(!navigator.geolocation){updateGeoPill('fail','Location not supported');return;}
-  updateGeoPill('checking','Getting location…');
-  navigator.geolocation.getCurrentPosition(pos=>{
-    const dist=haversine(pos.coords.latitude,pos.coords.longitude,lat,lng);
-    studentGeoResult={inRange:dist<=token.radius,dist};
-    if(studentGeoResult.inRange){updateGeoPill('ok',`In range · ${Math.round(dist)}m`);}
-    else{updateGeoPill('fail',`Out of range · ${Math.round(dist)}m`);if(dist>token.radius*3)showGate(dist,token.radius);}
-  },err=>{updateGeoPill('fail','Location denied');},{enableHighAccuracy:true,timeout:10000});
-}
-function showGate(dist,radius){
-  document.getElementById('gate-msg').textContent=`You are ${Math.round(dist)}m away (limit: ${radius}m)`;
-  document.getElementById('gate-screen').style.display='flex';
-}
-function retryGate(){document.getElementById('gate-screen').style.display='none';studentGeoResult=null;checkPageAccess();}
-
-// ── Scanner ───────────────────────────────────────────────────────────────────
-let scanner=null,scannerActive=false,lastScanTime=0;
-function startScanner(){
-  const container=document.getElementById('reader-container');
-  container.style.display='block';
-  document.getElementById('camera-status').textContent='Starting camera…';
-  document.getElementById('start-btn').style.display='none';
-  document.getElementById('stop-btn').style.display='inline-block';
-  if(scanner){try{scanner.clear();}catch(e){}}
-  scanner=new Html5Qrcode('reader');
-  scanner.start({facingMode:'environment'},{fps:10,qrbox:{width:220,height:220},aspectRatio:1.0},onScanSuccess,()=>{})
-    .then(()=>{scannerActive=true;document.getElementById('camera-status').textContent="Point at teacher's QR code";})
-    .catch(err=>{
-      document.getElementById('camera-status').textContent='Camera error: '+(err.message||err);
-      document.getElementById('start-btn').style.display='inline-block';
-      document.getElementById('stop-btn').style.display='none';
-      container.style.display='none';
-    });
-}
-function stopScanner(){
-  if(scanner&&scannerActive){scanner.stop().catch(()=>{});scannerActive=false;}
-  document.getElementById('reader-container').style.display='none';
-  document.getElementById('camera-status').textContent='Camera not started';
-  document.getElementById('start-btn').style.display='inline-block';
-  document.getElementById('stop-btn').style.display='none';
-}
-function onScanSuccess(raw){if(Date.now()-lastScanTime<3000)return;lastScanTime=Date.now();processCheckIn(raw);}
 
 // ── Google Sheets sync ────────────────────────────────────────────────────────
 // URL is set by the teacher in teacher.html Settings → Google Sheets sync
@@ -272,16 +155,15 @@ function sendToSheet(payload) {
 }
 
 // ── Check-in ──────────────────────────────────────────────────────────────────
-function showResult(type,icon,msg){const el=document.getElementById('scan-result');el.className='result-box show '+type;el.innerHTML=`<span class="result-icon">${icon}</span>${msg}`;}
 function showAutoResult(type,icon,msg){const el=document.getElementById('auto-result-box');el.className='result-box show '+type;el.innerHTML=`<span class="result-icon">${icon}</span>${msg}`;}
 
 function processCheckIn(raw){
   const name=getCurrentName();
-  if(!name){showResult('warn','✏️','Please enter your name before scanning.');return;}
+  if(!name){showAutoResult('warn','✏️','Please enter your name before scanning.');return;}
   let token;
-  try{token=JSON.parse(raw);}catch{showResult('error','❌','Invalid QR code. Scan your teacher\'s code.');return;}
-  if(Date.now()-token.ts>63000){showResult('error','⏰','QR code expired. Ask your teacher to refresh it.');return;}
-  if(token.session===undefined||token.hour===undefined){showResult('error','❌','Unrecognised QR code.');return;}
+  try{token=JSON.parse(raw);}catch{showAutoResult('error','❌','Invalid check-in link. Please scan the QR code again.');return;}
+  if(Date.now()-token.ts>63000){showAutoResult('error','⏰','QR code expired. Ask your teacher to refresh it.');return;}
+  if(token.session===undefined||token.hour===undefined){showAutoResult('error','❌','Unrecognised QR code.');return;}
 
   // Show course info from token if not already set
   if(token.courseTitle){
@@ -289,23 +171,19 @@ function processCheckIn(raw){
     renderCourseBanner();
   }
 
-  // Show testing mode indicator
-  const testNote=document.getElementById('test-mode-note');
-  if(testNote)testNote.style.display=token.testMode?'block':'none';
-
   const attendance=ld('att_records',{});
   if(attendance[name]?.[token.session]?.[token.hour]){
-    showResult('warn','✅',`Already checked in for Day ${token.session+1}, Hour ${token.hour+1}.`);return;
+    showAutoResult('warn','✅',`Already checked in for Day ${token.session+1}, Hour ${token.hour+1}.`);return;
   }
 
   if(token.geo&&token.lat!==null&&token.lng!==null){
-    showResult('warn','📍','Verifying your location…');
-    if(!navigator.geolocation){showResult('error','❌','Location not supported by your browser.');return;}
+    showAutoResult('warn','📍','Verifying your location…');
+    if(!navigator.geolocation){showAutoResult('error','❌','Location not supported by your browser.');return;}
     navigator.geolocation.getCurrentPosition(pos=>{
       const dist=haversine(pos.coords.latitude,pos.coords.longitude,token.lat,token.lng);
-      if(dist>token.radius){showResult('error','📍',`You are ${Math.round(dist)}m from the classroom. Must be within ${token.radius}m.`);}
+      if(dist>token.radius){showAutoResult('error','📍',`You are ${Math.round(dist)}m from the classroom. Must be within ${token.radius}m.`);}
       else{recordAttendance(name,token.session,token.hour,dist);}
-    },err=>{showResult('error','❌','Location denied: '+err.message);},{enableHighAccuracy:true,timeout:10000});
+    },err=>{showAutoResult('error','❌','Location denied: '+err.message);},{enableHighAccuracy:true,timeout:10000});
   }else{
     recordAttendance(name,token.session,token.hour,null);
   }
@@ -315,7 +193,7 @@ function recordAttendance(name,si,hi,dist){
   const attendance=ld('att_records',{});
   if(!attendance[name])attendance[name]={};
   if(!attendance[name][si])attendance[name][si]={};
-  if(attendance[name][si][hi]){showResult('warn','✅',`Already checked in for Day ${si+1}, Hour ${hi+1}.`);return;}
+  if(attendance[name][si][hi]){showAutoResult('warn','✅',`Already checked in for Day ${si+1}, Hour ${hi+1}.`);return;}
   const now=new Date();
   attendance[name][si][hi]={time:now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),date:now.toLocaleDateString(),dist:dist!==null?Math.round(dist):null};
   sv('att_records',attendance);
@@ -341,7 +219,6 @@ function recordAttendance(name,si,hi,dist){
   const geoNote=dist!==null?` · ${Math.round(dist)}m from classroom`:'';
   const dateNote=s.date?` (${fmtDate(s.date)})`:'';
   const msg=`Checked in for <strong>Day ${si+1}${dateNote}, Hour ${hi+1}</strong> at ${attendance[name][si][hi].time}${geoNote}`;
-  showResult('success','✅',msg);
   showAutoResult('success','✅',msg);
   renderHistory();
 }
@@ -380,7 +257,6 @@ function renderHistory(){
 // ── Init ──────────────────────────────────────────────────────────────────────
 renderCourseBanner();
 renderNameCard();
-checkPageAccess();
 
 // Auto check-in from URL token (one-scan flow)
 (function(){
@@ -414,7 +290,6 @@ checkPageAccess();
 })();
 
 window.addEventListener('storage',e=>{
-  if(e.key==='att_token')checkPageAccess();
   if(e.key==='att_sessions'||e.key==='att_hours')renderHistory();
   if(e.key==='att_course_pub')renderCourseBanner();
 });

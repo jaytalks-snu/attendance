@@ -204,6 +204,7 @@
           <div id="geo-badge" class="badge badge-green">Geofenced · 50m</div>
           <div class="timer-bar"><div class="timer-fill" id="timer-fill" style="width:100%;"></div></div>
           <div class="timer-label" id="timer-label">Refreshes in 60s</div>
+          <div id="qr-script-note" style="font-family:monospace;font-size:10px;color:var(--text-faint);margin-top:6px;text-align:center;"></div>
         </div>
         <div class="btn-row">
           <button class="btn btn-primary" onclick="generateQR(state.selectedSession,state.selectedHour)">↺ Refresh now</button>
@@ -467,6 +468,18 @@ function generateQR(si,hi){
   const rawToken=JSON.stringify(payload);
   state.tokenExpiry=Date.now()+60000;
   sv('att_token',{token:rawToken,expiry:state.tokenExpiry});
+
+  // Show whether script URL is embedded
+  const note=document.getElementById('qr-script-note');
+  if(note){
+    if(payload.scriptUrl){
+      note.textContent='✓ Sheet URL embedded in QR';
+      note.style.color='var(--green)';
+    } else {
+      note.textContent='⚠ No sheet URL — go to Settings → Google Sheets sync first';
+      note.style.color='var(--amber)';
+    }
+  }
 
   // Fully destroy old QR before creating new one — qrcodejs clear() is unreliable
   if(state.qrObj){try{state.qrObj.clear();}catch(e){}}

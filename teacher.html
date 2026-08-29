@@ -459,11 +459,12 @@ function renderHourGrid(){
   }).join('');
 }
 function selectHour(i){
-  state.selectedHour=i; renderHourGrid();
-  generateQR(state.selectedSession,i);
+  state.selectedHour=i;
+  renderHourGrid();
   const s=state.sessions[state.selectedSession];
   document.getElementById('qr-context-label').textContent=`Day ${state.selectedSession+1}${s.date?' · '+fmtDate(s.date):''} · Hour ${i+1}`;
   document.getElementById('qr-section').style.display='block';
+  generateQR(state.selectedSession,i);
 }
 
 // ── QR ────────────────────────────────────────────────────────────────────────
@@ -483,11 +484,20 @@ function generateQR(si,hi){
   const token=makeToken(si,hi);
   state.tokenExpiry=Date.now()+60000;
   sv('att_token',{token,expiry:state.tokenExpiry});
+
+  // Fully destroy old QR before creating new one — qrcodejs clear() is unreliable
+  if(state.qrObj){try{state.qrObj.clear();}catch(e){}}
+  state.qrObj=null;
   const c=document.getElementById('qr-canvas-container');
   c.innerHTML='';
-  if(state.qrObj){try{state.qrObj.clear();}catch(e){}}
-  state.qrObj=new QRCode(c,{text:token,width:220,height:220,colorDark:'#1a1917',colorLight:'#fff',correctLevel:QRCode.CorrectLevel.M});
-  updateGeoBadge(); startTimer();
+
+  // Small delay so the DOM clears before the new canvas is injected
+  setTimeout(()=>{
+    state.qrObj=new QRCode(c,{text:token,width:220,height:220,colorDark:'#1a1917',colorLight:'#fff',correctLevel:QRCode.CorrectLevel.M});
+  },50);
+
+  updateGeoBadge();
+  startTimer();
 }
 function startTimer(){
   if(state.timerInterval)clearInterval(state.timerInterval);

@@ -888,60 +888,61 @@ function applyManualAttendance(){
   const now=new Date();
   const timeStr=now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 
-  // Build a flat list of all requests to send
-  const queue=[];
+  // Build all items into one array — sent as a single request
+  const items=[];
   targets.forEach(name=>{
     hours.forEach(hi=>{
-      queue.push({name,hi});
-    });
-  });
-
-  if(!queue.length){alert('출석 처리할 항목이 없습니다.');return;}
-
-  closeManualPanel();
-  setRecordsStatus(`0 / ${queue.length}건 처리 중…`,'var(--amber)');
-
-  // Send requests one at a time with 600ms gap — Apps Script cannot handle simultaneous writes
-  let idx=0;
-  function sendNext(){
-    if(idx>=queue.length){
-      setRecordsStatus(`✓ ${queue.length}건 처리 완료 — 시트 업데이트 중…`,'var(--green)');
-      setTimeout(()=>renderRecords(), 2500);
-      return;
-    }
-    const {name,hi}=queue[idx];
-    setRecordsStatus(`${idx+1} / ${queue.length}건 처리 중 (${name} · Hour ${hi+1})…`,'var(--amber)');
-
-    if(url){
-      const params=new URLSearchParams({
-        action:'checkin',name,previousName:'',
-        session:si,hour:hi,
+      items.push({
+        name,
+        previousName:'',
+        session:si,
+        hour:hi,
         sessionDate:s.date||'',
         hourLabel:state.hours[hi]?.time||('Hour '+(hi+1)),
-        checkInTime:timeStr,dist:'',
+        checkInTime:timeStr,
+        dist:null,
         courseTitle:course.title||'',
         courseNumber:course.number||'',
         teacherName:course.teacher||'',
-        manual:'true',
       });
-      const cbName='_m'+Date.now()+'_'+idx;
-      const script=document.createElement('script');
-      const timer=setTimeout(()=>{
-        delete window[cbName];script.remove();
-        idx++;sendNext(); // timeout — move on anyway
-      },8000);
-      window[cbName]=function(){
-        clearTimeout(timer);delete window[cbName];script.remove();
-        idx++;
-        setTimeout(sendNext,600); // wait 600ms before next request
-      };
-      script.src=url+'?'+params.toString()+'&callback='+cbName;
-      document.head.appendChild(script);
+    });
+  });
+
+  if(!items.length){alert('출석 처리할 항목이 없습니다.');return;}
+
+  closeManualPanel();
+  setRecordsStatus(`${items.length}건 처리 중…`,'var(--amber)');
+
+  // Send all items in ONE request via bulk_checkin
+  const cbName='_bulk'+Date.now();
+  const script=document.createElement('script');
+  const timer=setTimeout(()=>{
+    delete window[cbName];script.remove();
+    setRecordsStatus('처리 시간 초과 — 잠시 후 Refresh를 눌러 확인해 주세요.','var(--red)');
+  },60000);
+
+  window[cbName]=function(data){
+    clearTimeout(timer);delete window[cbName];script.remove();
+    if(data&&data.status==='ok'){
+      const count=data.results?data.results.length:items.length;
+      setRecordsStatus(`✓ ${count}건 처리 완료`,'var(--green)');
     } else {
-      idx++;sendNext();
+      setRecordsStatus('오류: '+(data&&data.message?data.message:'알 수 없는 오류'),'var(--red)');
     }
-  }
-  sendNext();
+    setTimeout(()=>renderRecords(),1500);
+  };
+
+  script.onerror=function(){
+    clearTimeout(timer);delete window[cbName];script.remove();
+    setRecordsStatus('연결 오류 — URL을 확인해 주세요.','var(--red)');
+  };
+
+  const params=new URLSearchParams({
+    action:'bulk_checkin',
+    items:JSON.stringify(items),
+  });
+  script.src=url+'?'+params.toString()+'&callback='+cbName;
+  document.head.appendChild(script);
 }
 
 // Start polling on load

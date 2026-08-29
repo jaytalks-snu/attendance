@@ -51,6 +51,32 @@
   .result-box.warn { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-border); }
   .result-icon { font-size: 20px; display: block; margin-bottom: 6px; }
 
+  /* Complete check-in button — large and prominent */
+  .checkin-btn {
+    display: none;
+    width: 100%;
+    padding: 20px;
+    margin-bottom: 16px;
+    background: var(--green);
+    color: white;
+    border: none;
+    border-radius: var(--radius-lg);
+    font-size: 20px;
+    font-family: 'Georgia', serif;
+    cursor: pointer;
+    text-align: center;
+    letter-spacing: 0.01em;
+    box-shadow: 0 4px 16px rgba(45,125,79,0.35);
+    animation: btn-pulse 2s ease-in-out infinite;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .checkin-btn:active { opacity: 0.85; transform: scale(0.98); }
+  .checkin-btn .btn-sub { display: block; font-size: 13px; opacity: 0.8; margin-top: 4px; font-family: monospace; }
+  @keyframes btn-pulse {
+    0%,100% { box-shadow: 0 4px 16px rgba(45,125,79,0.35); }
+    50% { box-shadow: 0 4px 28px rgba(45,125,79,0.6); }
+  }
+
   /* History — 8-session grid */
   .history-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
   .hist-cell { border: 1px solid var(--border); border-radius: 8px; padding: 8px 4px; text-align: center; }
@@ -84,7 +110,10 @@
   <div class="card" id="name-card"></div>
 
   <div id="auto-result-box" class="result-box" style="margin-bottom:14px;"></div>
-  <button id="auto-checkin-btn" class="btn btn-primary btn-full" style="display:none;margin-bottom:14px;">Complete check-in</button>
+  <button id="auto-checkin-btn" class="checkin-btn">
+    Tap to Check In
+    <span class="btn-sub" id="checkin-btn-sub">Enter your name above first</span>
+  </button>
 
   <div class="section-label">My attendance — all sessions</div>
   <div class="card">
@@ -255,7 +284,9 @@ function recordAttendance(name,si,hi,dist){
   sv('att_records',attendance);
   // Notify teacher page
   if(typeof BroadcastChannel!=='undefined'){try{new BroadcastChannel('att_sync').postMessage('att_records');}catch(e){}}
-  // Send to Google Sheet
+  // Hide check-in button
+  const btn=document.getElementById('auto-checkin-btn');
+  if(btn)btn.style.display='none';  // Send to Google Sheet
   const course=ld('att_course_pub',{});
   sendToSheet({
     action:'checkin',
@@ -339,18 +370,31 @@ renderNameCard();
   const name=getCurrentName();
   if(!name){
     showAutoResult('warn','✏️','Please enter your name below, then tap the button to complete check-in.');
-    document.getElementById('auto-checkin-btn').style.display='block';
-    document.getElementById('auto-checkin-btn').onclick=()=>{
+    const btn=document.getElementById('auto-checkin-btn');
+    const sub=document.getElementById('checkin-btn-sub');
+    btn.style.display='block';
+    if(sub)sub.textContent='Enter your name above first';
+    btn.onclick=()=>{
       const n=getCurrentName();
       if(!n){alert('Please enter your name first.');return;}
-      document.getElementById('auto-checkin-btn').style.display='none';
+      btn.style.display='none';
       processCheckIn(JSON.stringify(token));
     };
     return;
   }
 
-  // Name already saved — check in immediately
-  setTimeout(()=>processCheckIn(JSON.stringify(token)), 300);
+  // Name already saved — show button briefly then auto check in
+  const btn=document.getElementById('auto-checkin-btn');
+  const sub=document.getElementById('checkin-btn-sub');
+  const SESSIONS=getSessions();const HOURS=getHours();
+  const sessLabel=SESSIONS[token.session]?.date?fmtDate(SESSIONS[token.session].date):'Day '+(token.session+1);
+  const hourLabel=HOURS[token.hour]?.time||('Hour '+(token.hour+1));
+  if(sub)sub.textContent=sessLabel+' · '+hourLabel;
+  btn.style.display='block';
+  setTimeout(()=>{
+    btn.style.display='none';
+    processCheckIn(JSON.stringify(token));
+  }, 300);
 })();
 
 window.addEventListener('storage',e=>{

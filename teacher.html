@@ -186,19 +186,6 @@
 
   <!-- QR Tab -->
   <div id="panel-qr" class="panel active">
-    <div class="section-label">Student check-in page</div>
-    <div class="card">
-      <div style="font-size:13px;margin-bottom:6px;">Share this URL with students:</div>
-      <div class="url-box" id="student-url-box" onclick="copyStudentURL()">loading…</div>
-      <div class="url-copy-hint">Click to copy · or show as QR below</div>
-      <div class="btn-row" style="justify-content:flex-start;margin-top:10px;">
-        <button class="btn btn-sm" onclick="toggleURLQR()">Show URL as QR</button>
-      </div>
-      <div id="url-qr-wrap" style="display:none;text-align:center;margin-top:12px;">
-        <div id="url-qr-container" style="display:inline-block;border:1px solid var(--border);border-radius:8px;padding:10px;background:white;"></div>
-        <div style="font-size:11px;color:var(--text-faint);font-family:monospace;margin-top:6px;">Students scan once to open the check-in page</div>
-      </div>
-    </div>
 
     <div class="section-label">1. Select class day</div>
     <div class="session-scroll" id="session-scroll"></div>
@@ -318,7 +305,7 @@ const state = {
   selectedSession:null, selectedHour:null,
   geoEnabled:true, geoRadius:50,
   classroomLat:null, classroomLng:null,
-  tokenExpiry:null, timerInterval:null, qrObj:null, urlQRObj:null,
+  tokenExpiry:null, timerInterval:null, qrObj:null,
   sessions:null, hours:null, attendance:null,
   courseTitle:'', courseNumber:'', teacherName:'',
 };
@@ -374,7 +361,7 @@ function initApp(){
   document.getElementById('teacher-name').value=state.teacherName;
   document.getElementById('script-url').value=localStorage.getItem('att_script_url')||'';
   document.getElementById('geo-radius').addEventListener('input',updateGeoBadge);
-  updateHeader(); updateStudentURL(); renderSessionChips(); renderSessionsTable(); renderHourTimeInputs();
+  updateHeader(); renderSessionChips(); renderSessionsTable(); renderHourTimeInputs();
   applyTestMode();
 }
 
@@ -400,25 +387,6 @@ function switchTab(tab){
     document.getElementById('panel-'+t).classList.toggle('active',t===tab);
   });
   if(tab==='records')renderRecords();
-}
-
-// ── Student URL ───────────────────────────────────────────────────────────────
-function getStudentURL(){return window.location.href.replace('teacher.html','student.html');}
-function updateStudentURL(){document.getElementById('student-url-box').textContent=getStudentURL();}
-function copyStudentURL(){
-  navigator.clipboard.writeText(getStudentURL()).then(()=>{
-    const b=document.getElementById('student-url-box');const orig=b.textContent;
-    b.textContent='✓ Copied!';setTimeout(()=>b.textContent=orig,1800);
-  });
-}
-function toggleURLQR(){
-  const wrap=document.getElementById('url-qr-wrap');
-  const c=document.getElementById('url-qr-container');
-  wrap.style.display=wrap.style.display==='none'?'block':'none';
-  if(wrap.style.display==='block'){
-    c.innerHTML='';if(state.urlQRObj){try{state.urlQRObj.clear();}catch(e){}}
-    state.urlQRObj=new QRCode(c,{text:getStudentURL(),width:180,height:180,colorDark:'#1a1917',colorLight:'#fff',correctLevel:QRCode.CorrectLevel.M});
-  }
 }
 
 // ── Session chips ─────────────────────────────────────────────────────────────

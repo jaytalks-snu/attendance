@@ -725,6 +725,8 @@ function resetClassroomGPS(){
   document.getElementById('manual-lat').value='';
   document.getElementById('manual-lng').value='';
 }
+
+function saveManualGPS(){
   const lat=parseFloat(document.getElementById('manual-lat').value);
   const lng=parseFloat(document.getElementById('manual-lng').value);
   const el=document.getElementById('teacher-geo-info');

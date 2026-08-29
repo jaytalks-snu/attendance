@@ -336,6 +336,14 @@
       <div class="btn-row" style="justify-content:flex-start;margin-top:10px;">
         <button class="btn btn-sm" onclick="captureClassroomGPS()">📍 Set classroom GPS</button>
       </div>
+      <div style="margin-top:12px;">
+        <div class="field-label" style="margin-bottom:4px;">Or enter coordinates manually</div>
+        <div class="row" style="gap:6px;">
+          <input type="text" id="manual-lat" placeholder="Latitude (e.g. 37.56345)" style="flex:1;font-size:12px;">
+          <input type="text" id="manual-lng" placeholder="Longitude (e.g. 126.97729)" style="flex:1;font-size:12px;">
+          <button class="btn btn-sm" onclick="saveManualGPS()">Save</button>
+        </div>
+      </div>
     </div>
 
     <div class="section-label">Google Sheets sync</div>
@@ -682,13 +690,42 @@ function updateGeoBadge(){
   else{b.className='badge badge-red';b.textContent='No geofencing';}
 }
 function captureClassroomGPS(){
-  const el=document.getElementById('teacher-geo-info');el.textContent='Getting location…';
-  if(!navigator.geolocation){el.textContent='Not supported.';return;}
-  navigator.geolocation.getCurrentPosition(pos=>{
-    state.classroomLat=pos.coords.latitude;state.classroomLng=pos.coords.longitude;
-    el.textContent=`GPS: ${state.classroomLat.toFixed(5)}, ${state.classroomLng.toFixed(5)} (±${Math.round(pos.coords.accuracy)}m)`;
-    localStorage.setItem('classroom_lat',state.classroomLat);localStorage.setItem('classroom_lng',state.classroomLng);
-  },err=>{el.textContent='Error: '+err.message;},{enableHighAccuracy:true});
+  const el=document.getElementById('teacher-geo-info');
+  el.textContent='Getting location…';
+  if(!navigator.geolocation){el.textContent='Not supported by this browser.';return;}
+
+  function savePos(pos){
+    state.classroomLat=pos.coords.latitude;
+    state.classroomLng=pos.coords.longitude;
+    el.textContent=`GPS: ${state.classroomLat.toFixed(5)}, ${state.classroomLng.toFixed(5)} (±${Math.round(pos.coords.accuracy)}m) ✓ Saved`;
+    localStorage.setItem('classroom_lat',state.classroomLat);
+    localStorage.setItem('classroom_lng',state.classroomLng);
+  }
+  function onError(err){
+    // High accuracy failed — try again with low accuracy (works better indoors/PC)
+    el.textContent='High accuracy failed, trying network location…';
+    navigator.geolocation.getCurrentPosition(
+      savePos,
+      ()=>{ el.textContent='Error: '+err.message+'. Try allowing location in browser settings.'; },
+      { enableHighAccuracy:false, timeout:10000 }
+    );
+  }
+
+  navigator.geolocation.getCurrentPosition(savePos, onError,
+    { enableHighAccuracy:true, timeout:8000, maximumAge:0 }
+  );
+}
+
+function saveManualGPS(){
+  const lat=parseFloat(document.getElementById('manual-lat').value);
+  const lng=parseFloat(document.getElementById('manual-lng').value);
+  const el=document.getElementById('teacher-geo-info');
+  if(isNaN(lat)||isNaN(lng)){el.textContent='Invalid coordinates — please check and try again.';return;}
+  state.classroomLat=lat;state.classroomLng=lng;
+  localStorage.setItem('classroom_lat',lat);localStorage.setItem('classroom_lng',lng);
+  el.textContent=`GPS: ${lat.toFixed(5)}, ${lng.toFixed(5)} ✓ Saved`;
+  document.getElementById('manual-lat').value='';
+  document.getElementById('manual-lng').value='';
 }
 
 // ── Sessions / Hours config ───────────────────────────────────────────────────

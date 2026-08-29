@@ -90,6 +90,8 @@
   <div class="card">
     <div class="history-grid" id="history-grid"></div>
   </div>
+
+  <div id="debug-panel" style="margin-top:8px;padding:10px 14px;background:var(--surface2);border-radius:var(--radius);font-family:monospace;font-size:10px;color:var(--text-faint);line-height:1.8;"></div>
 </main>
 
 <script>
@@ -144,11 +146,26 @@ function haversine(a,b,c,d){const R=6371000,dL=(c-a)*Math.PI/180,dl=(d-b)*Math.P
 // ── Google Sheets sync ────────────────────────────────────────────────────────
 function getScriptURL(){return localStorage.getItem('att_script_url')||'';}
 
+function showSyncStatus(msg,color){
+  let el=document.getElementById('sync-status');
+  if(!el){
+    el=document.createElement('div');
+    el.id='sync-status';
+    el.style.cssText='margin-top:10px;padding:8px 12px;border-radius:8px;font-family:monospace;font-size:11px;line-height:1.6;background:var(--surface2);border:1px solid var(--border);';
+    document.getElementById('auto-result-box').insertAdjacentElement('afterend',el);
+  }
+  el.style.color=color||'var(--text-muted)';
+  el.textContent=msg;
+}
+
 function sendToSheet(payload){
   const url=getScriptURL();
-  if(!url)return;
+  if(!url){
+    showSyncStatus('⚠ No script URL — check-in saved locally only','var(--amber)');
+    return;
+  }
+  showSyncStatus('Syncing to Google Sheets…');
 
-  // Send via JSONP GET — immune to CORS, CSP, and redirect issues
   const params=new URLSearchParams({
     action:      'checkin',
     name:        payload.name        ||'',
@@ -165,10 +182,29 @@ function sendToSheet(payload){
 
   const cbName='_ci'+Date.now();
   const script=document.createElement('script');
-  const timer=setTimeout(()=>{delete window[cbName];script.remove();},15000);
-  window[cbName]=function(){clearTimeout(timer);delete window[cbName];script.remove();};
+
+  const timer=setTimeout(()=>{
+    delete window[cbName];script.remove();
+    showSyncStatus('❌ Sync timed out — saved locally only. URL: '+url.slice(0,60)+'…','var(--red)');
+  },15000);
+
+  window[cbName]=function(data){
+    clearTimeout(timer);delete window[cbName];script.remove();
+    if(data&&data.status==='ok'){
+      showSyncStatus('✓ Synced to Google Sheets ('+data.message+')','var(--green)');
+    } else {
+      showSyncStatus('❌ Sheet error: '+(data&&data.message?data.message:'unknown'),'var(--red)');
+    }
+  };
+
+  script.onerror=function(){
+    clearTimeout(timer);delete window[cbName];script.remove();
+    showSyncStatus('❌ Script blocked — URL may be wrong or CSP is blocking it','var(--red)');
+  };
+
   script.src=url+'?'+params.toString()+'&callback='+cbName;
   document.head.appendChild(script);
+  showSyncStatus('Connecting to: '+url.slice(0,60)+'…');
 }
 
 // ── Check-in ──────────────────────────────────────────────────────────────────
@@ -277,6 +313,14 @@ function renderHistory(){
 // ── Init ──────────────────────────────────────────────────────────────────────
 renderCourseBanner();
 renderNameCard();
+
+// Debug panel
+(function(){
+  const url=localStorage.getItem('att_script_url')||'(none)';
+  const name=localStorage.getItem('att_student_name')||'(none)';
+  document.getElementById('debug-panel').textContent=
+    'Script URL: '+url+'\nSaved name: '+name;
+})();
 
 // Auto check-in from URL token (one-scan flow)
 (function(){

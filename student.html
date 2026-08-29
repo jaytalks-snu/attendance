@@ -67,6 +67,8 @@
 </head>
 <body>
 
+<iframe name="att_submit_frame" style="display:none;" aria-hidden="true"></iframe>
+
 <header>
   <div class="header-top">
     <div class="logo"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="16" y="16" width="5" height="5" rx="0.5"/><rect x="13" y="13" width="2" height="2"/></svg></div>
@@ -142,17 +144,25 @@ function editName(){clearSavedName();renderNameCard();setTimeout(()=>{const i=do
 function haversine(a,b,c,d){const R=6371000,dL=(c-a)*Math.PI/180,dl=(d-b)*Math.PI/180,x=Math.sin(dL/2)**2+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dl/2)**2;return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));}
 
 // ── Google Sheets sync ────────────────────────────────────────────────────────
-// URL is set by the teacher in teacher.html Settings → Google Sheets sync
 function getScriptURL(){return localStorage.getItem('att_script_url')||'';}
 
-function sendToSheet(payload) {
+function sendToSheet(payload){
   const url=getScriptURL();
-  if (!url) return;
-  fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify(payload),
-  }).catch(() => {});
+  if(!url)return;
+  // Use a hidden form POST — never blocked by CORS or CSP
+  const form=document.createElement('form');
+  form.method='POST';
+  form.action=url;
+  form.target='att_submit_frame'; // post into hidden iframe so page doesn't navigate
+  form.style.display='none';
+  const input=document.createElement('input');
+  input.type='hidden';
+  input.name='payload';
+  input.value=JSON.stringify(payload);
+  form.appendChild(input);
+  document.body.appendChild(form);
+  form.submit();
+  setTimeout(()=>form.remove(), 3000);
 }
 
 // ── Check-in ──────────────────────────────────────────────────────────────────

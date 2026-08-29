@@ -227,6 +227,34 @@
       <button class="btn btn-sm btn-danger" onclick="clearRecords()">Clear all</button>
     </div>
     <div id="records-status" style="font-family:monospace;font-size:11px;color:var(--text-faint);margin-bottom:8px;"></div>
+
+    <!-- Manual attendance panel -->
+    <div class="card" id="manual-att-card" style="display:none;margin-bottom:12px;border-color:var(--amber-border);background:var(--amber-bg);">
+      <div style="font-size:13px;font-weight:500;color:var(--amber);margin-bottom:10px;">✏️ 수동 출석 처리</div>
+      <div class="row" style="margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+        <div style="flex:1;min-width:140px;">
+          <div class="field-label">Day</div>
+          <select id="manual-session" style="width:100%;padding:6px 8px;border:1px solid var(--border-strong);border-radius:var(--radius);font-size:12px;font-family:monospace;background:var(--surface);">
+          </select>
+        </div>
+        <div style="flex:1;min-width:140px;">
+          <div class="field-label">Hour</div>
+          <select id="manual-hour" style="width:100%;padding:6px 8px;border:1px solid var(--border-strong);border-radius:var(--radius);font-size:12px;font-family:monospace;background:var(--surface);">
+            <option value="all">전체 (1–4시간)</option>
+            <option value="0">Hour 1</option>
+            <option value="1">Hour 2</option>
+            <option value="2">Hour 3</option>
+            <option value="3">Hour 4</option>
+          </select>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--amber);margin-bottom:8px;" id="manual-target-label"></div>
+      <div class="btn-row" style="justify-content:flex-start;">
+        <button class="btn btn-sm btn-primary" onclick="applyManualAttendance()">출석 처리</button>
+        <button class="btn btn-sm" onclick="closeManualPanel()">취소</button>
+      </div>
+    </div>
+
     <div class="card" style="padding:0;overflow:auto;">
       <div id="records-table-wrap"></div>
     </div>
@@ -679,6 +707,7 @@ function buildFilterOptions(){
 function renderRecordsFromData(attendance){
   state.attendance=attendance;
   buildFilterOptions();
+  buildManualSessionOptions();
   const fs=document.getElementById('filter-session').value;
   const students=Object.keys(attendance).sort();
   let totalCI=0,totalPos=0;
@@ -698,8 +727,13 @@ function renderRecordsFromData(attendance){
   if(!students.length){wrap.innerHTML='<div class="empty-state">No records yet.</div>';return;}
 
   let hdr='';
-  if(fs==='all'){hdr=state.sessions.map((s,i)=>`<th title="Day ${i+1}${s.date?' · '+fmtDate(s.date):''}">D${i+1}</th>`).join('');}
-  else{hdr=state.hours.map((_,i)=>`<th>H${i+1}</th>`).join('');}
+  if(fs==='all'){
+    hdr=state.sessions.map((s,i)=>`<th title="Day ${i+1}${s.date?' · '+fmtDate(s.date):''}">
+      D${i+1}<button onclick="openManualPanel(${i},'all')" title="Day ${i+1} 전체 출석 처리" style="margin-left:4px;background:none;border:none;cursor:pointer;font-size:10px;color:var(--amber);">✏️</button>
+    </th>`).join('');
+  } else {
+    hdr=state.hours.map((h,i)=>`<th>H${i+1}</th>`).join('');
+  }
 
   const rows=students.map(name=>{
     const rec=attendance[name];
@@ -708,13 +742,13 @@ function renderRecordsFromData(attendance){
       cells=state.sessions.map((_,si)=>{
         const sr=rec[si]||{};const hrs=Object.keys(sr).length;
         tot+=hrs;pos+=4;
-        return `<td><span class="mini-dot${hrs>0?' p':''}" title="${hrs}/4 hrs">${hrs>0?hrs:''}</span></td>`;
+        return `<td><span class="mini-dot${hrs>0?' p':''}" title="${hrs}/4 hrs — 클릭하여 수동 출석" style="cursor:pointer;" onclick="openManualPanel(${si},'all','${name}')">${hrs>0?hrs:''}</span></td>`;
       }).join('');
     }else{
       const si=parseInt(fs);const sr=rec[si]||{};
       cells=state.hours.map((_,hi)=>{
         const r=sr[hi];tot+=r?1:0;pos++;
-        return `<td><span class="mini-dot${r?' p':''}" title="${r?r.time:'absent'}">${r?'✓':''}</span></td>`;
+        return `<td><span class="mini-dot${r?' p':''}" title="${r?r.time:'클릭하여 출석 처리'}" style="cursor:pointer;" onclick="${r?'':` openManualPanel(${si},${hi},'${name}')`}">${r?'✓':''}</span></td>`;
       }).join('');
     }
     const pct=pos>0?Math.round(tot/pos*100):0;
@@ -794,6 +828,98 @@ function exportCSV(){
 function clearRecords(){
   if(!confirm('Clear ALL attendance for all sessions? This clears local data only — delete rows in Google Sheets manually if needed.'))return;
   state.attendance={};sv('att_records',{});renderRecords();renderSessionChips();
+}
+
+// ── Manual attendance ─────────────────────────────────────────────────────────
+let manualTarget={si:null,hi:null,name:null};
+
+function buildManualSessionOptions(){
+  const sel=document.getElementById('manual-session');
+  if(!sel)return;
+  sel.innerHTML=state.sessions.map((s,i)=>
+    `<option value="${i}">Day ${i+1}${s.date?' · '+fmtDate(s.date):''}</option>`
+  ).join('');
+}
+
+function openManualPanel(si,hi,name){
+  manualTarget={si,hi,name:name||null};
+  const card=document.getElementById('manual-att-card');
+  document.getElementById('manual-session').value=si;
+  document.getElementById('manual-hour').value=hi==='all'?'all':String(hi);
+  updateManualLabel();
+  card.style.display='block';
+  card.scrollIntoView({behavior:'smooth',block:'nearest'});
+  document.getElementById('manual-session').onchange=updateManualLabel;
+  document.getElementById('manual-hour').onchange=updateManualLabel;
+}
+
+function updateManualLabel(){
+  const si=parseInt(document.getElementById('manual-session').value);
+  const hiVal=document.getElementById('manual-hour').value;
+  const s=state.sessions[si];
+  const dayLabel=`Day ${si+1}${s.date?' ('+fmtDate(s.date)+')':''}`;
+  const hourLabel=hiVal==='all'?'전체 4시간':`Hour ${parseInt(hiVal)+1}`;
+  const students=Object.keys(state.attendance||{});
+  const targetLabel=manualTarget.name?`"${manualTarget.name}"`:
+    `전체 학생 ${students.length}명`;
+  document.getElementById('manual-target-label').textContent=
+    `→ ${targetLabel} · ${dayLabel} · ${hourLabel} 출석 처리`;
+}
+
+function closeManualPanel(){
+  document.getElementById('manual-att-card').style.display='none';
+  manualTarget={si:null,hi:null,name:null};
+}
+
+function applyManualAttendance(){
+  const si=parseInt(document.getElementById('manual-session').value);
+  const hiVal=document.getElementById('manual-hour').value;
+  const hours=hiVal==='all'?[0,1,2,3]:[parseInt(hiVal)];
+  const url=localStorage.getItem('att_script_url')||'';
+  const s=state.sessions[si];
+  const course=ld('att_course_pub',{});
+  const allStudents=Object.keys(state.attendance||{});
+  const targets=manualTarget.name?[manualTarget.name]:allStudents;
+
+  if(!targets.length){
+    alert('출석 처리할 학생이 없습니다. 먼저 학생들이 한 번이라도 체크인해야 목록에 나타납니다.');
+    return;
+  }
+
+  const now=new Date();
+  const timeStr=now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  let sent=0;
+
+  targets.forEach(name=>{
+    hours.forEach(hi=>{
+      if(state.attendance[name]?.[si]?.[hi])return; // 이미 출석
+      if(url){
+        const params=new URLSearchParams({
+          action:'checkin',name,previousName:'',
+          session:si,hour:hi,
+          sessionDate:s.date||'',
+          hourLabel:state.hours[hi]?.time||('Hour '+(hi+1)),
+          checkInTime:timeStr,dist:'',
+          courseTitle:course.title||'',
+          courseNumber:course.number||'',
+          teacherName:course.teacher||'',
+          manual:'true',
+        });
+        const cbName='_m'+Date.now()+'_'+Math.random().toString(36).slice(2);
+        const script=document.createElement('script');
+        const timer=setTimeout(()=>{delete window[cbName];script.remove();},15000);
+        window[cbName]=function(){clearTimeout(timer);delete window[cbName];script.remove();};
+        script.src=url+'?'+params.toString()+'&callback='+cbName;
+        document.head.appendChild(script);
+      }
+      sent++;
+    });
+  });
+
+  if(sent===0){alert('선택한 학생들은 이미 모두 출석 처리되어 있습니다.');return;}
+  setRecordsStatus(`${targets.length}명 · ${sent}건 처리 중…`,'var(--amber)');
+  closeManualPanel();
+  setTimeout(()=>renderRecords(),3000);
 }
 
 // Start polling on load

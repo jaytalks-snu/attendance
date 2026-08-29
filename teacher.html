@@ -887,37 +887,61 @@ function applyManualAttendance(){
 
   const now=new Date();
   const timeStr=now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-  let sent=0;
 
+  // Build a flat list of all requests to send
+  const queue=[];
   targets.forEach(name=>{
     hours.forEach(hi=>{
-      if(url){
-        const params=new URLSearchParams({
-          action:'checkin',name,previousName:'',
-          session:si,hour:hi,
-          sessionDate:s.date||'',
-          hourLabel:state.hours[hi]?.time||('Hour '+(hi+1)),
-          checkInTime:timeStr,dist:'',
-          courseTitle:course.title||'',
-          courseNumber:course.number||'',
-          teacherName:course.teacher||'',
-          manual:'true',
-        });
-        const cbName='_m'+Date.now()+'_'+Math.random().toString(36).slice(2);
-        const script=document.createElement('script');
-        const timer=setTimeout(()=>{delete window[cbName];script.remove();},15000);
-        window[cbName]=function(){clearTimeout(timer);delete window[cbName];script.remove();};
-        script.src=url+'?'+params.toString()+'&callback='+cbName;
-        document.head.appendChild(script);
-      }
-      sent++;
+      queue.push({name,hi});
     });
   });
 
-  if(sent===0){alert('출석 처리할 학생이 없습니다.');return;}
-  setRecordsStatus(`${targets.length}명 · ${sent}건 처리 중…`,'var(--amber)');
+  if(!queue.length){alert('출석 처리할 항목이 없습니다.');return;}
+
   closeManualPanel();
-  setTimeout(()=>renderRecords(),3000);
+  setRecordsStatus(`0 / ${queue.length}건 처리 중…`,'var(--amber)');
+
+  // Send requests one at a time with 600ms gap — Apps Script cannot handle simultaneous writes
+  let idx=0;
+  function sendNext(){
+    if(idx>=queue.length){
+      setRecordsStatus(`✓ ${queue.length}건 처리 완료 — 시트 업데이트 중…`,'var(--green)');
+      setTimeout(()=>renderRecords(), 2500);
+      return;
+    }
+    const {name,hi}=queue[idx];
+    setRecordsStatus(`${idx+1} / ${queue.length}건 처리 중 (${name} · Hour ${hi+1})…`,'var(--amber)');
+
+    if(url){
+      const params=new URLSearchParams({
+        action:'checkin',name,previousName:'',
+        session:si,hour:hi,
+        sessionDate:s.date||'',
+        hourLabel:state.hours[hi]?.time||('Hour '+(hi+1)),
+        checkInTime:timeStr,dist:'',
+        courseTitle:course.title||'',
+        courseNumber:course.number||'',
+        teacherName:course.teacher||'',
+        manual:'true',
+      });
+      const cbName='_m'+Date.now()+'_'+idx;
+      const script=document.createElement('script');
+      const timer=setTimeout(()=>{
+        delete window[cbName];script.remove();
+        idx++;sendNext(); // timeout — move on anyway
+      },8000);
+      window[cbName]=function(){
+        clearTimeout(timer);delete window[cbName];script.remove();
+        idx++;
+        setTimeout(sendNext,600); // wait 600ms before next request
+      };
+      script.src=url+'?'+params.toString()+'&callback='+cbName;
+      document.head.appendChild(script);
+    } else {
+      idx++;sendNext();
+    }
+  }
+  sendNext();
 }
 
 // Start polling on load

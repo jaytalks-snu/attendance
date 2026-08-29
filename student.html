@@ -180,6 +180,7 @@ function renderNameCard(){
   renderHistory();
 }
 function editName(){
+  previousName=getSavedName(); // remember old name for deletion
   clearSavedName();
   document.getElementById('auto-result-box').className='result-box';
   document.getElementById('auto-checkin-btn').style.display='none';
@@ -220,17 +221,18 @@ function sendToSheet(payload){
   showSyncStatus('Syncing to Google Sheets…');
 
   const params=new URLSearchParams({
-    action:      'checkin',
-    name:        payload.name        ||'',
-    session:     payload.session,
-    hour:        payload.hour,
-    sessionDate: payload.sessionDate ||'',
-    hourLabel:   payload.hourLabel   ||'',
-    checkInTime: payload.checkInTime ||'',
-    dist:        payload.dist!==null&&payload.dist!==undefined?payload.dist:'',
-    courseTitle: payload.courseTitle ||'',
-    courseNumber:payload.courseNumber||'',
-    teacherName: payload.teacherName ||'',
+    action:       'checkin',
+    name:         payload.name         ||'',
+    previousName: payload.previousName ||'',
+    session:      payload.session,
+    hour:         payload.hour,
+    sessionDate:  payload.sessionDate  ||'',
+    hourLabel:    payload.hourLabel    ||'',
+    checkInTime:  payload.checkInTime  ||'',
+    dist:         payload.dist!==null&&payload.dist!==undefined?payload.dist:'',
+    courseTitle:  payload.courseTitle  ||'',
+    courseNumber: payload.courseNumber ||'',
+    teacherName:  payload.teacherName  ||'',
   });
 
   const cbName='_ci'+Date.now();
@@ -315,6 +317,7 @@ function recordAttendance(name,si,hi,dist){
   sendToSheet({
     action:'checkin',
     name,
+    previousName: previousName||'',
     session:si,
     hour:hi,
     sessionDate:getSessions()[si]?.date||'',
@@ -325,6 +328,7 @@ function recordAttendance(name,si,hi,dist){
     courseNumber:course.number||'',
     teacherName:course.teacher||'',
   });
+  previousName=null; // clear after use
   setSavedName(name); renderNameCard();
   const s=getSessions()[si];
   const geoNote=dist!==null?` · ${Math.round(dist)}m from classroom`:'';
@@ -371,6 +375,7 @@ renderNameCard();
 
 // ── Active token (kept in memory so editName can re-use it) ──────────────────
 let activeToken = null;
+let previousName = null; // tracks name before correction
 
 // Auto check-in from URL token (one-scan flow)
 (function(){

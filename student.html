@@ -41,8 +41,12 @@
   input[type=text]:focus { outline: none; border-color: var(--text); }
   .name-display { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--green-bg); border: 1px solid var(--green-border); border-radius: var(--radius); }
   .name-display .name-text { font-size: 15px; color: var(--green); }
-  .name-display .name-edit { font-family: monospace; font-size: 11px; color: var(--text-muted); cursor: pointer; text-decoration: underline; background: none; border: none; padding: 0; }
-  .name-display .name-edit:hover { color: var(--text); }
+  .name-display .name-edit {
+    font-family: monospace; font-size: 12px; color: white;
+    cursor: pointer; background: var(--amber); border: none;
+    padding: 5px 10px; border-radius: var(--radius); flex-shrink: 0;
+  }
+  .name-display .name-edit:hover { opacity: 0.85; }
 
   .result-box { padding: 14px 16px; border-radius: var(--radius); font-size: 14px; line-height: 1.6; display: none; margin-top: 12px; }
   .result-box.show { display: block; }
@@ -118,8 +122,6 @@
   <div class="card">
     <div class="history-grid" id="history-grid"></div>
   </div>
-
-  <div id="debug-panel" style="margin-top:8px;padding:10px 14px;background:var(--surface2);border-radius:var(--radius);font-family:monospace;font-size:10px;color:var(--text-faint);line-height:1.8;"></div>
 </main>
 
 <script>
@@ -160,13 +162,33 @@ function renderNameCard(){
   const card=document.getElementById('name-card');
   const saved=getSavedName();
   if(saved){
-    card.innerHTML=`<div class="name-display"><span class="name-text">👤 ${saved}</span><button class="name-edit" onclick="editName()">Not you?</button></div>`;
+    card.innerHTML=`
+      <div class="name-display">
+        <span class="name-text">👤 ${saved}</span>
+        <button class="name-edit" onclick="editName()">이름 수정</button>
+      </div>
+      <div style="font-size:11px;font-family:monospace;color:var(--text-faint);margin-top:8px;">
+        이름이 잘못되었나요? 오른쪽 버튼을 눌러 수정하세요.
+      </div>`;
   }else{
-    card.innerHTML=`<input type="text" id="student-name" placeholder="Enter your full name" autocomplete="name" oninput="renderHistory()">`;
+    card.innerHTML=`
+      <input type="text" id="student-name" placeholder="성명을 입력하세요 (예: 홍길동)" autocomplete="name" oninput="renderHistory()" style="font-size:16px;padding:12px;">
+      <div style="font-size:11px;font-family:monospace;color:var(--text-faint);margin-top:8px;">
+        정확하게 입력해 주세요. 한 번 저장되면 다음 수업부터 자동으로 입력됩니다.
+      </div>`;
   }
   renderHistory();
 }
-function editName(){clearSavedName();renderNameCard();setTimeout(()=>{const i=document.getElementById('student-name');if(i)i.focus();},50);}
+function editName(){
+  // Clear saved name and any previous check-in result so student can re-enter
+  clearSavedName();
+  document.getElementById('auto-result-box').className='result-box';
+  document.getElementById('auto-checkin-btn').style.display='none';
+  const syncEl=document.getElementById('sync-status');
+  if(syncEl)syncEl.remove();
+  renderNameCard();
+  setTimeout(()=>{const i=document.getElementById('student-name');if(i)i.focus();},50);
+}
 
 // ── Geolocation util ─────────────────────────────────────────────────────────
 function haversine(a,b,c,d){const R=6371000,dL=(c-a)*Math.PI/180,dl=(d-b)*Math.PI/180,x=Math.sin(dL/2)**2+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dl/2)**2;return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));}
@@ -343,14 +365,6 @@ function renderHistory(){
 // ── Init ──────────────────────────────────────────────────────────────────────
 renderCourseBanner();
 renderNameCard();
-
-// Debug panel
-(function(){
-  const url=localStorage.getItem('att_script_url')||'(none)';
-  const name=localStorage.getItem('att_student_name')||'(none)';
-  document.getElementById('debug-panel').textContent=
-    'Script URL: '+url+'\nSaved name: '+name;
-})();
 
 // Auto check-in from URL token (one-scan flow)
 (function(){

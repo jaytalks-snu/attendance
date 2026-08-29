@@ -180,13 +180,16 @@ function renderNameCard(){
   renderHistory();
 }
 function editName(){
-  // Clear saved name and any previous check-in result so student can re-enter
   clearSavedName();
   document.getElementById('auto-result-box').className='result-box';
   document.getElementById('auto-checkin-btn').style.display='none';
   const syncEl=document.getElementById('sync-status');
   if(syncEl)syncEl.remove();
   renderNameCard();
+  // Re-show check-in button if there's an active token waiting
+  if(activeToken){
+    setTimeout(()=>showCheckinButton(activeToken), 100);
+  }
   setTimeout(()=>{const i=document.getElementById('student-name');if(i)i.focus();},50);
 }
 
@@ -366,6 +369,9 @@ function renderHistory(){
 renderCourseBanner();
 renderNameCard();
 
+// ── Active token (kept in memory so editName can re-use it) ──────────────────
+let activeToken = null;
+
 // Auto check-in from URL token (one-scan flow)
 (function(){
   const params=new URLSearchParams(window.location.search);
@@ -379,36 +385,44 @@ renderNameCard();
   try{ token=JSON.parse(decodeURIComponent(escape(atob(t)))); }
   catch(e){ showAutoResult('error','❌','Invalid check-in link. Please scan again.'); return; }
 
-  // If student has no saved name yet, show prompt and retry button
-  const name=getCurrentName();
-  if(!name){
-    showAutoResult('warn','✏️','Please enter your name above, then tap the button to complete check-in.');
-    const btn=document.getElementById('auto-checkin-btn');
-    const sub=document.getElementById('checkin-btn-sub');
-    btn.style.display='block';
-    if(sub)sub.textContent='Enter your name above first';
-    btn.onclick=()=>{
-      const n=getCurrentName();
-      if(!n){alert('Please enter your name first.');return;}
-      btn.style.display='none';
-      processCheckIn(JSON.stringify(token));
-    };
-    return;
-  }
+  activeToken=token; // save for use after name edit
 
-  // Name already saved — show button briefly then auto check in
+  showCheckinButton(token);
+})();
+
+function showCheckinButton(token){
+  const name=getCurrentName();
   const btn=document.getElementById('auto-checkin-btn');
   const sub=document.getElementById('checkin-btn-sub');
   const SESSIONS=getSessions();const HOURS=getHours();
   const sessLabel=SESSIONS[token.session]?.date?fmtDate(SESSIONS[token.session].date):'Day '+(token.session+1);
   const hourLabel=HOURS[token.hour]?.time||('Hour '+(token.hour+1));
-  if(sub)sub.textContent=sessLabel+' · '+hourLabel;
-  btn.style.display='block';
-  setTimeout(()=>{
-    btn.style.display='none';
-    processCheckIn(JSON.stringify(token));
-  }, 300);
-})();
+
+  if(!name){
+    // No name yet — show button and prompt
+    showAutoResult('warn','✏️','위에 이름을 입력한 후 아래 버튼을 눌러 체크인하세요.');
+    if(sub)sub.textContent='이름 입력 후 탭하세요';
+    btn.style.display='block';
+    btn.onclick=()=>{
+      const n=getCurrentName();
+      if(!n){alert('이름을 먼저 입력해 주세요.');return;}
+      btn.style.display='none';
+      processCheckIn(JSON.stringify(token));
+    };
+  } else {
+    // Name saved — show button briefly then auto check in
+    if(sub)sub.textContent=sessLabel+' · '+hourLabel;
+    btn.style.display='block';
+    btn.onclick=()=>{
+      btn.style.display='none';
+      processCheckIn(JSON.stringify(token));
+    };
+    setTimeout(()=>{
+      btn.style.display='none';
+      processCheckIn(JSON.stringify(token));
+    }, 300);
+  }
+}
 
 window.addEventListener('storage',e=>{
   if(e.key==='att_sessions'||e.key==='att_hours')renderHistory();

@@ -125,6 +125,10 @@
   <div class="section-label">Your name</div>
   <div class="card" id="name-card"></div>
 
+  <!-- Auto check-in result (shown when arriving via QR scan URL) -->
+  <div id="auto-result-box" class="result-box" style="margin-bottom:14px;"></div>
+  <button id="auto-checkin-btn" class="btn btn-primary btn-full" style="display:none;margin-bottom:14px;">Complete check-in</button>
+
   <div style="text-align:center;margin-bottom:14px;">
     <span class="geo-pill checking" id="geo-pill">Checking location…</span>
   </div>
@@ -269,6 +273,7 @@ function sendToSheet(payload) {
 
 // ── Check-in ──────────────────────────────────────────────────────────────────
 function showResult(type,icon,msg){const el=document.getElementById('scan-result');el.className='result-box show '+type;el.innerHTML=`<span class="result-icon">${icon}</span>${msg}`;}
+function showAutoResult(type,icon,msg){const el=document.getElementById('auto-result-box');el.className='result-box show '+type;el.innerHTML=`<span class="result-icon">${icon}</span>${msg}`;}
 
 function processCheckIn(raw){
   const name=getCurrentName();
@@ -335,7 +340,9 @@ function recordAttendance(name,si,hi,dist){
   const s=getSessions()[si];
   const geoNote=dist!==null?` · ${Math.round(dist)}m from classroom`:'';
   const dateNote=s.date?` (${fmtDate(s.date)})`:'';
-  showResult('success','✅',`Checked in for <strong>Day ${si+1}${dateNote}, Hour ${hi+1}</strong> at ${attendance[name][si][hi].time}${geoNote}`);
+  const msg=`Checked in for <strong>Day ${si+1}${dateNote}, Hour ${hi+1}</strong> at ${attendance[name][si][hi].time}${geoNote}`;
+  showResult('success','✅',msg);
+  showAutoResult('success','✅',msg);
   renderHistory();
 }
 
@@ -374,6 +381,37 @@ function renderHistory(){
 renderCourseBanner();
 renderNameCard();
 checkPageAccess();
+
+// Auto check-in from URL token (one-scan flow)
+(function(){
+  const params=new URLSearchParams(window.location.search);
+  const t=params.get('t');
+  if(!t)return;
+
+  // Clean the URL so refreshing doesn't re-trigger
+  window.history.replaceState({},'',window.location.pathname);
+
+  let token;
+  try{ token=JSON.parse(decodeURIComponent(escape(atob(t)))); }
+  catch(e){ showAutoResult('error','❌','Invalid check-in link. Please scan again.'); return; }
+
+  // If student has no saved name yet, show prompt and retry button
+  const name=getCurrentName();
+  if(!name){
+    showAutoResult('warn','✏️','Please enter your name below, then tap the button to complete check-in.');
+    document.getElementById('auto-checkin-btn').style.display='block';
+    document.getElementById('auto-checkin-btn').onclick=()=>{
+      const n=getCurrentName();
+      if(!n){alert('Please enter your name first.');return;}
+      document.getElementById('auto-checkin-btn').style.display='none';
+      processCheckIn(JSON.stringify(token));
+    };
+    return;
+  }
+
+  // Name already saved — check in immediately
+  setTimeout(()=>processCheckIn(JSON.stringify(token)), 300);
+})();
 
 window.addEventListener('storage',e=>{
   if(e.key==='att_token')checkPageAccess();

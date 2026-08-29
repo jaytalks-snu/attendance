@@ -468,9 +468,11 @@ function selectHour(i){
 }
 
 // ── QR ────────────────────────────────────────────────────────────────────────
-function makeToken(si,hi){
+function getStudentBase(){return window.location.href.replace('teacher.html','student.html').split('?')[0];}
+
+function makeTokenPayload(si,hi){
   const testMode=isTestMode();
-  return JSON.stringify({
+  return {
     session:si, hour:hi,
     geo: testMode ? false : state.geoEnabled,
     lat:state.classroomLat, lng:state.classroomLng, radius:state.geoRadius,
@@ -478,12 +480,19 @@ function makeToken(si,hi){
     courseTitle:state.courseTitle, courseNumber:state.courseNumber, teacherName:state.teacherName,
     sessionDate:state.sessions[si]?.date||'',
     testMode,
-  });
+  };
+}
+
+function makeQRText(si,hi){
+  // Encode as a URL so scanning opens student.html and auto-checks in — one scan only
+  const payload=btoa(unescape(encodeURIComponent(JSON.stringify(makeTokenPayload(si,hi)))));
+  return getStudentBase()+'?t='+payload;
 }
 function generateQR(si,hi){
-  const token=makeToken(si,hi);
+  const payload=makeTokenPayload(si,hi);
+  const rawToken=JSON.stringify(payload);
   state.tokenExpiry=Date.now()+60000;
-  sv('att_token',{token,expiry:state.tokenExpiry});
+  sv('att_token',{token:rawToken,expiry:state.tokenExpiry});
 
   // Fully destroy old QR before creating new one — qrcodejs clear() is unreliable
   if(state.qrObj){try{state.qrObj.clear();}catch(e){}}
@@ -491,9 +500,9 @@ function generateQR(si,hi){
   const c=document.getElementById('qr-canvas-container');
   c.innerHTML='';
 
-  // Small delay so the DOM clears before the new canvas is injected
+  const qrText=makeQRText(si,hi);
   setTimeout(()=>{
-    state.qrObj=new QRCode(c,{text:token,width:220,height:220,colorDark:'#1a1917',colorLight:'#fff',correctLevel:QRCode.CorrectLevel.M});
+    state.qrObj=new QRCode(c,{text:qrText,width:220,height:220,colorDark:'#1a1917',colorLight:'#fff',correctLevel:QRCode.CorrectLevel.M});
   },50);
 
   updateGeoBadge();

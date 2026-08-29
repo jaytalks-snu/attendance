@@ -220,9 +220,11 @@
       <select id="filter-session" onchange="renderRecords()">
         <option value="all">All sessions</option>
       </select>
+      <button class="btn btn-sm" onclick="renderRecords()">↺ Refresh</button>
       <button class="btn btn-sm" onclick="exportCSV()">Export CSV</button>
       <button class="btn btn-sm btn-danger" onclick="clearRecords()">Clear all</button>
     </div>
+    <div id="records-status" style="font-family:monospace;font-size:11px;color:var(--text-faint);margin-bottom:8px;"></div>
     <div class="card" style="padding:0;overflow:auto;">
       <div id="records-table-wrap"></div>
     </div>
@@ -388,7 +390,6 @@ function switchTab(tab){
   });
   if(tab==='records')renderRecords();
 }
-
 // ── Session chips ─────────────────────────────────────────────────────────────
 function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
 function fmtDate(iso){if(!iso)return 'No date';const[y,m,d]=iso.split('-');return new Date(y,m-1,d).toLocaleDateString(undefined,{month:'short',day:'numeric'});}
@@ -583,7 +584,7 @@ function updateHourTime(i,val){
     generateQR(state.selectedSession,i);
 }
 
-// ── Records ───────────────────────────────────────────────────────────────────
+// ── Records — fetched from Google Sheets ─────────────────────────────────────
 function buildFilterOptions(){
   const sel=document.getElementById('filter-session');
   const cur=sel.value;
@@ -592,14 +593,14 @@ function buildFilterOptions(){
   if([...sel.options].some(o=>o.value===cur))sel.value=cur;
 }
 
-function renderRecords(){
-  state.attendance=ld('att_records',{});
+function renderRecordsFromData(attendance){
+  state.attendance=attendance;
   buildFilterOptions();
   const fs=document.getElementById('filter-session').value;
-  const students=Object.keys(state.attendance).sort();
+  const students=Object.keys(attendance).sort();
   let totalCI=0,totalPos=0;
   students.forEach(name=>{
-    const rec=state.attendance[name];
+    const rec=attendance[name];
     if(fs==='all'){state.sessions.forEach((_,si)=>{if(rec[si])totalCI+=Object.keys(rec[si]).length;totalPos+=4;});}
     else{const si=parseInt(fs);if(rec[si])totalCI+=Object.keys(rec[si]).length;totalPos+=4;}
   });
@@ -618,7 +619,7 @@ function renderRecords(){
   else{hdr=state.hours.map((_,i)=>`<th>H${i+1}</th>`).join('');}
 
   const rows=students.map(name=>{
-    const rec=state.attendance[name];
+    const rec=attendance[name];
     let cells='',tot=0,pos=0;
     if(fs==='all'){
       cells=state.sessions.map((_,si)=>{
@@ -641,14 +642,63 @@ function renderRecords(){
   wrap.innerHTML=`<table class="rec-table"><thead><tr><th>Student</th>${hdr}<th>Total</th><th>Rate</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+function setRecordsStatus(msg,color){
+  const el=document.getElementById('records-status');
+  if(el){el.textContent=msg;el.style.color=color||'var(--text-faint)';}
+}
+
+// JSONP — injects a <script> tag to bypass CORS on Apps Script redirects
+function jsonpFetch(url, callback){
+  const cbName='_cb'+Date.now();
+  const script=document.createElement('script');
+  const timer=setTimeout(()=>{
+    delete window[cbName];script.remove();
+    callback(null,new Error('Timeout'));
+  },10000);
+  window[cbName]=function(data){
+    clearTimeout(timer);delete window[cbName];script.remove();
+    callback(data,null);
+  };
+  script.src=url+(url.includes('?')?'&':'?')+'callback='+cbName;
+  document.head.appendChild(script);
+}
+
+function renderRecords(){
+  const url=localStorage.getItem('att_script_url')||'';
+  if(!url){
+    renderRecordsFromData(ld('att_records',{}));
+    setRecordsStatus('Google Sheets not configured — showing local data only','var(--amber)');
+    return;
+  }
+  setRecordsStatus('Loading from Google Sheets…');
+  jsonpFetch(url+'?action=get_records',(data,err)=>{
+    if(err||!data||data.status!=='ok'){
+      renderRecordsFromData(ld('att_records',{}));
+      setRecordsStatus('Could not reach Google Sheets — showing local data','var(--red)');
+      return;
+    }
+    renderRecordsFromData(data.records||{});
+    setRecordsStatus('Updated · '+new Date().toLocaleTimeString());
+  });
+}
+
+// Auto-refresh records every 30s when Records tab is open
+let recordsPollInterval=null;
+function startRecordsPoll(){
+  if(recordsPollInterval)clearInterval(recordsPollInterval);
+  recordsPollInterval=setInterval(()=>{
+    if(document.getElementById('panel-records').classList.contains('active'))renderRecords();
+  },30000);
+}
+
 function exportCSV(){
-  state.attendance=ld('att_records',{});
-  const students=Object.keys(state.attendance).sort();
+  const attendance=state.attendance||{};
+  const students=Object.keys(attendance).sort();
   if(!students.length){alert('No records.');return;}
   const q=v=>`"${String(v).replace(/"/g,'""')}"`;
   const hdr=[q('Name'),...state.sessions.flatMap((s,si)=>state.hours.map((_,hi)=>q(`Day${si+1}${s.date?'_'+s.date:''}_H${hi+1}`))),'Total','Rate(%)'];
   const rows=students.map(name=>{
-    const rec=state.attendance[name];let tot=0,pos=0;
+    const rec=attendance[name];let tot=0,pos=0;
     const cols=state.sessions.flatMap((_,si)=>state.hours.map((_,hi)=>{
       const r=rec[si]?.[hi];pos++;if(r){tot++;return q(r.time);}return 'absent';
     }));
@@ -659,23 +709,12 @@ function exportCSV(){
 }
 
 function clearRecords(){
-  if(!confirm('Clear ALL attendance for all sessions? Cannot be undone.'))return;
+  if(!confirm('Clear ALL attendance for all sessions? This clears local data only — delete rows in Google Sheets manually if needed.'))return;
   state.attendance={};sv('att_records',{});renderRecords();renderSessionChips();
 }
 
-function onAttendanceUpdate(){
-  state.attendance=ld('att_records',{});
-  renderSessionChips();
-  if(state.selectedSession!==null)renderHourGrid();
-  if(document.getElementById('panel-records').classList.contains('active'))renderRecords();
-}
-// Cross-tab sync via storage event (different tabs)
-window.addEventListener('storage',e=>{if(e.key==='att_records')onAttendanceUpdate();});
-// Same-browser sync via BroadcastChannel (same tab or same-origin pages)
-if(typeof BroadcastChannel!=='undefined'){
-  const bc=new BroadcastChannel('att_sync');
-  bc.onmessage=e=>{if(e.data==='att_records')onAttendanceUpdate();};
-}
+// Start polling on load
+startRecordsPoll();
 </script>
 </body>
 </html>

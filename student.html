@@ -108,7 +108,6 @@
 <main>
   <div class="section-label">Your name</div>
   <div class="card" id="name-card"></div>
-
   <div id="auto-result-box" class="result-box" style="margin-bottom:14px;"></div>
   <button id="auto-checkin-btn" class="checkin-btn">
     Tap to Check In
@@ -369,7 +368,7 @@ renderNameCard();
   // If student has no saved name yet, show prompt and retry button
   const name=getCurrentName();
   if(!name){
-    showAutoResult('warn','✏️','Please enter your name below, then tap the button to complete check-in.');
+    showAutoResult('warn','✏️','Please enter your name above, then tap the button to complete check-in.');
     const btn=document.getElementById('auto-checkin-btn');
     const sub=document.getElementById('checkin-btn-sub');
     btn.style.display='block';

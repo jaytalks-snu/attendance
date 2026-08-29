@@ -282,8 +282,11 @@
         <div class="field-label">Apps Script Web App URL</div>
         <input type="text" id="script-url" placeholder="https://script.google.com/macros/s/…/exec" style="width:100%;font-size:11px;" oninput="saveScriptURL()">
       </div>
-      <div id="script-url-msg" style="font-size:12px;font-family:monospace;display:none;"></div>
-      <button class="btn btn-sm" onclick="testScriptURL()">Test connection</button>
+      <div id="script-url-msg" style="font-size:12px;font-family:monospace;margin-bottom:8px;display:none;"></div>
+      <div class="btn-row" style="justify-content:flex-start;margin-top:4px;">
+        <button class="btn btn-sm" onclick="runDiagnostic()">🔍 Run diagnostic</button>
+      </div>
+      <div id="diag-output" style="display:none;margin-top:12px;background:var(--surface2);border-radius:var(--radius);padding:12px;font-family:monospace;font-size:11px;line-height:1.8;"></div>
     </div>
 
     <div class="section-label">Change password</div>
@@ -514,19 +517,84 @@ function saveScriptURL(){
   const msg=document.getElementById('script-url-msg');
   msg.style.display=url?'block':'none';
   msg.style.color='var(--text-muted)';
-  msg.textContent=url?'URL saved. Students will sync to this sheet on check-in.':'';
+  msg.textContent=url?'URL saved.':'';
 }
-function testScriptURL(){
-  const url=localStorage.getItem('att_script_url')||'';
-  const msg=document.getElementById('script-url-msg');
-  msg.style.display='block';
-  if(!url){msg.style.color='var(--red)';msg.textContent='No URL saved yet.';return;}
-  msg.style.color='var(--text-muted)';msg.textContent='Testing…';
-  fetch(url+'?test=1').then(r=>r.text()).then(()=>{
-    msg.style.color='var(--green)';msg.textContent='✓ Connection successful!';
-  }).catch(()=>{
-    msg.style.color='var(--amber)';msg.textContent='Could not reach the URL — check it is deployed as "Anyone" access.';
-  });
+
+function diagLog(lines, line, color){
+  lines.push(`<span style="color:${color||'inherit'}">${line}</span>`);
+  document.getElementById('diag-output').innerHTML=lines.join('<br>');
+}
+
+function runDiagnostic(){
+  const out=document.getElementById('diag-output');
+  out.style.display='block';
+  out.innerHTML='Running…';
+  const lines=[];
+  const url=(localStorage.getItem('att_script_url')||'').trim();
+
+  // Step 1: URL present?
+  if(!url){
+    diagLog(lines,'❌ No URL saved. Paste your Apps Script URL above and save.','var(--red)');return;
+  }
+  diagLog(lines,'✓ URL found','var(--green)');
+
+  // Step 2: URL format
+  if(!url.startsWith('https://script.google.com/macros/s/')){
+    diagLog(lines,'❌ URL does not look like an Apps Script URL. It should start with https://script.google.com/macros/s/','var(--red)');return;
+  }
+  if(!url.endsWith('/exec')){
+    diagLog(lines,'❌ URL should end with /exec — check you copied the full deployment URL','var(--red)');return;
+  }
+  diagLog(lines,'✓ URL format looks correct','var(--green)');
+
+  // Step 3: JSONP reachability test
+  diagLog(lines,'… Contacting Apps Script via JSONP (may take 5–10s)');
+  const cbName='_diag'+Date.now();
+  const script=document.createElement('script');
+  const timer=setTimeout(()=>{
+    delete window[cbName]; script.remove();
+    diagLog(lines,'❌ Timed out — Apps Script did not respond within 10 seconds.','var(--red)');
+    diagLog(lines,'   Possible causes:','var(--amber)');
+    diagLog(lines,'   • Script not deployed yet, or deployed as old version','var(--amber)');
+    diagLog(lines,'   • "Who has access" not set to Anyone','var(--amber)');
+    diagLog(lines,'   • Wrong URL pasted','var(--amber)');
+    diagLog(lines,'   Fix: Deploy → Manage deployments → Edit → New version → Deploy','var(--amber)');
+  },10000);
+
+  window[cbName]=function(data){
+    clearTimeout(timer); delete window[cbName]; script.remove();
+    diagLog(lines,'✓ Apps Script responded','var(--green)');
+
+    // Step 4: response shape
+    if(!data||typeof data!=='object'){
+      diagLog(lines,'❌ Response was not valid JSON — script may have an error','var(--red)');return;
+    }
+    diagLog(lines,'✓ Response is valid JSON','var(--green)');
+
+    if(data.status!=='ok'){
+      diagLog(lines,'❌ Script returned error: '+(data.message||JSON.stringify(data)),'var(--red)');return;
+    }
+    diagLog(lines,'✓ Status: ok','var(--green)');
+
+    // Step 5: records present?
+    const rec=data.records||{};
+    const students=Object.keys(rec);
+    if(students.length===0){
+      diagLog(lines,'⚠ No records found in sheet — is the Attendance Log sheet empty?','var(--amber)');
+      diagLog(lines,'  If students have checked in, make sure the sheet name is exactly: Attendance Log','var(--amber)');
+    } else {
+      diagLog(lines,`✓ Found ${students.length} student(s) in sheet`,'var(--green)');
+      diagLog(lines,'✓ Everything looks good! Switching to Records tab…','var(--green)');
+      setTimeout(()=>switchTab('records'),1500);
+    }
+  };
+
+  script.onerror=function(){
+    clearTimeout(timer); delete window[cbName]; script.remove();
+    diagLog(lines,'❌ Script tag failed to load — network error or URL is wrong','var(--red)');
+  };
+  script.src=url+'?action=get_records&callback='+cbName;
+  document.head.appendChild(script);
 }
 
 // ── Geo ───────────────────────────────────────────────────────────────────────

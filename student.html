@@ -182,10 +182,13 @@ function processCheckIn(raw){
   if(Date.now()-token.ts>63000){showAutoResult('error','⏰','QR code expired. Ask your teacher to refresh it.');return;}
   if(token.session===undefined||token.hour===undefined){showAutoResult('error','❌','Unrecognised QR code.');return;}
 
-  // Show course info from token if not already set
+  // Save course info and script URL from token
   if(token.courseTitle){
     sv('att_course_pub',{title:token.courseTitle,number:token.courseNumber||'',teacher:token.teacherName||''});
     renderCourseBanner();
+  }
+  if(token.scriptUrl){
+    localStorage.setItem('att_script_url', token.scriptUrl);
   }
 
   const attendance=ld('att_records',{});

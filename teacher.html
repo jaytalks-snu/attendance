@@ -453,6 +453,7 @@ function makeTokenPayload(si,hi){
     courseTitle:state.courseTitle, courseNumber:state.courseNumber, teacherName:state.teacherName,
     sessionDate:state.sessions[si]?.date||'',
     testMode,
+    scriptUrl:localStorage.getItem('att_script_url')||'',
   };
 }
 

@@ -212,7 +212,7 @@
     <div id="rename-reminder" style="display:none;background:var(--amber-bg);border:1.5px dashed var(--amber-border);border-radius:var(--radius);padding:10px 14px;margin-bottom:12px;display:none;">
       <div style="font-size:13px;color:var(--amber);font-weight:500;margin-bottom:4px;">⚠️ 이름 수정 대기 중</div>
       <div style="font-size:12px;color:var(--amber);font-family:monospace;" id="rename-reminder-detail"></div>
-      <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">새 QR을 생성하면 수정 정보가 자동으로 포함됩니다. 아래에서 Hour를 선택하거나 ↺ Refresh를 눌러주세요.</div>
+      <div class="rename-note" style="font-size:11px;color:var(--text-muted);margin-top:6px;">새 QR을 생성하면 수정 정보가 자동으로 포함됩니다. 아래에서 Hour를 선택하거나 ↺ Refresh를 눌러주세요.</div>
     </div>
 
     <div class="section-label">1. Select class day</div>
@@ -609,8 +609,7 @@ function generateQR(si,hi){
 
   updateGeoBadge();
   startTimer();
-  // Reminder stays visible until student confirms — but note QR now includes renames
-  updateRenameBanner();
+  updateRenameBanner(true); // QR now includes renames
 }
 function startTimer(){
   if(state.timerInterval)clearInterval(state.timerInterval);
@@ -961,7 +960,7 @@ function clearRecords(){
 }
 
 // ── Rename reminder banner ────────────────────────────────────────────────────
-function updateRenameBanner(){
+function updateRenameBanner(qrGenerated){
   const renames=ld('att_renames',{});
   const banner=document.getElementById('rename-reminder');
   const detail=document.getElementById('rename-reminder-detail');
@@ -972,6 +971,16 @@ function updateRenameBanner(){
   } else {
     banner.style.display='block';
     detail.textContent=entries.map(([o,n])=>`"${o}" → "${n}"`).join(' · ');
+    const note=banner.querySelector('.rename-note');
+    if(note){
+      if(qrGenerated){
+        note.textContent='✓ 수정 정보가 현재 QR에 포함되었습니다. 학생이 스캔하면 자동으로 적용됩니다.';
+        note.style.color='var(--green)';
+      } else {
+        note.textContent='새 QR을 생성하면 수정 정보가 자동으로 포함됩니다. Hour를 선택하거나 ↺ Refresh를 눌러주세요.';
+        note.style.color='var(--text-muted)';
+      }
+    }
   }
 }
 
@@ -1354,7 +1363,7 @@ function cleanAppliedRenames(){
     }
     delete applied[oldName];
   });
-  if(changed){sv('att_renames',renames);sv('att_renames_applied',{});}
+  if(changed){sv('att_renames',renames);sv('att_renames_applied',{});updateRenameBanner();}
 }
 
 // BroadcastChannel — same browser

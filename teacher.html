@@ -208,6 +208,13 @@
   <!-- QR Tab -->
   <div id="panel-qr" class="panel active">
 
+    <!-- Rename reminder banner — shown when pending renames exist -->
+    <div id="rename-reminder" style="display:none;background:var(--amber-bg);border:1.5px dashed var(--amber-border);border-radius:var(--radius);padding:10px 14px;margin-bottom:12px;display:none;">
+      <div style="font-size:13px;color:var(--amber);font-weight:500;margin-bottom:4px;">⚠️ 이름 수정 대기 중</div>
+      <div style="font-size:12px;color:var(--amber);font-family:monospace;" id="rename-reminder-detail"></div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">새 QR을 생성하면 수정 정보가 자동으로 포함됩니다. 아래에서 Hour를 선택하거나 ↺ Refresh를 눌러주세요.</div>
+    </div>
+
     <div class="section-label">1. Select class day</div>
     <div class="session-scroll" id="session-scroll"></div>
 
@@ -473,6 +480,9 @@ function initApp(){
   document.getElementById('geo-radius').addEventListener('input',updateGeoBadge);
   updateHeader(); renderSessionChips(); renderSessionsTable(); renderHourTimeInputs();
   applyTestMode();
+
+  // Load renames from Google Sheet on startup (survives browser cache clears)
+  loadRenamesFromSheet();
 }
 
 function saveCourseInfo(){
@@ -497,6 +507,7 @@ function switchTab(tab){
     document.getElementById('panel-'+t).classList.toggle('active',t===tab);
   });
   if(tab==='records')renderRecords();
+  if(tab==='qr')updateRenameBanner();
 }
 // ── Session chips ─────────────────────────────────────────────────────────────
 function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
@@ -558,6 +569,7 @@ function makeTokenPayload(si,hi){
     sessionDate:state.sessions[si]?.date||'',
     testMode,
     scriptUrl:localStorage.getItem('att_script_url')||'',
+    renames:ld('att_renames',{}), // pending name corrections for students
   };
 }
 
@@ -597,6 +609,8 @@ function generateQR(si,hi){
 
   updateGeoBadge();
   startTimer();
+  // Reminder stays visible until student confirms — but note QR now includes renames
+  updateRenameBanner();
 }
 function startTimer(){
   if(state.timerInterval)clearInterval(state.timerInterval);
@@ -946,6 +960,65 @@ function clearRecords(){
   state.attendance={};sv('att_records',{});renderRecords();renderSessionChips();
 }
 
+// ── Rename reminder banner ────────────────────────────────────────────────────
+function updateRenameBanner(){
+  const renames=ld('att_renames',{});
+  const banner=document.getElementById('rename-reminder');
+  const detail=document.getElementById('rename-reminder-detail');
+  if(!banner||!detail)return;
+  const entries=Object.entries(renames);
+  if(entries.length===0){
+    banner.style.display='none';
+  } else {
+    banner.style.display='block';
+    detail.textContent=entries.map(([o,n])=>`"${o}" → "${n}"`).join(' · ');
+  }
+}
+
+// ── Renames — persisted in Google Sheet ──────────────────────────────────────
+function loadRenamesFromSheet(){
+  const url=localStorage.getItem('att_script_url')||'';
+  if(!url)return;
+  const cbName='_gr'+Date.now();
+  const script=document.createElement('script');
+  const timer=setTimeout(()=>{delete window[cbName];script.remove();},10000);
+  window[cbName]=function(data){
+    clearTimeout(timer);delete window[cbName];script.remove();
+    if(data&&data.status==='ok'&&data.renames){
+      const local=ld('att_renames',{});
+      Object.assign(local,data.renames);
+      sv('att_renames',local);
+      updateRenameBanner(); // reflect loaded renames in banner
+    }
+  };
+  script.src=url+'?action=get_renames&callback='+cbName;
+  document.head.appendChild(script);
+}
+
+function saveRenameToSheet(oldName, newName){
+  const url=localStorage.getItem('att_script_url')||'';
+  if(!url)return;
+  const params=new URLSearchParams({action:'save_rename',oldName,newName});
+  const cbName='_sr'+Date.now();
+  const script=document.createElement('script');
+  const timer=setTimeout(()=>{delete window[cbName];script.remove();},10000);
+  window[cbName]=function(){clearTimeout(timer);delete window[cbName];script.remove();};
+  script.src=url+'?'+params.toString()+'&callback='+cbName;
+  document.head.appendChild(script);
+}
+
+function deleteRenameFromSheet(oldName){
+  const url=localStorage.getItem('att_script_url')||'';
+  if(!url)return;
+  const params=new URLSearchParams({action:'delete_rename',oldName});
+  const cbName='_dr'+Date.now();
+  const script=document.createElement('script');
+  const timer=setTimeout(()=>{delete window[cbName];script.remove();},10000);
+  window[cbName]=function(){clearTimeout(timer);delete window[cbName];script.remove();};
+  script.src=url+'?'+params.toString()+'&callback='+cbName;
+  document.head.appendChild(script);
+}
+
 // ── Student detail panel ──────────────────────────────────────────────────────
 function openDetailPanel(name){
   const rec=state.attendance[name]||{};
@@ -956,7 +1029,9 @@ function openDetailPanel(name){
   const pct=pos>0?Math.round(tot/pos*100):0;
   const col=pct<75?'var(--red)':pct<100?'var(--amber)':'var(--green)';
 
-  document.getElementById('detail-name').textContent='👤 '+name;
+  document.getElementById('detail-name').innerHTML=`
+    <span id="detail-name-text">👤 ${name}</span>
+    <button class="btn btn-sm" style="margin-left:10px;font-size:11px;" onclick="startRenameStudent('${name.replace(/'/g,"\\'")}')">이름 수정</button>`;
   document.getElementById('detail-stats').innerHTML=
     `출석 ${tot}/${pos}시간 &nbsp;·&nbsp; <span style="color:${col};font-weight:500;">${pct}%</span>`;
 
@@ -965,7 +1040,6 @@ function openDetailPanel(name){
     const sr=rec[si]||{};
     const hrs=Object.keys(sr).length;
     const cls=hrs===4?'full':hrs>0?'partial':'absent';
-    const dayCls=cls;
     const dateStr=s.date?fmtDate(s.date):'날짜 미정';
     const hourRows=state.hours.map((h,hi)=>{
       const r=sr[hi];
@@ -976,7 +1050,7 @@ function openDetailPanel(name){
     }).join('');
     return `<div class="detail-session ${cls}">
       <div class="ds-head">
-        <span class="ds-day ${dayCls}">Day ${si+1} &nbsp;${hrs}/4</span>
+        <span class="ds-day ${cls}">Day ${si+1} &nbsp;${hrs}/4</span>
         <span class="ds-date">${dateStr}</span>
       </div>
       <div class="ds-hours">${hourRows}</div>
@@ -986,6 +1060,67 @@ function openDetailPanel(name){
   const panel=document.getElementById('detail-panel');
   panel.classList.add('open');
   panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+function startRenameStudent(currentName){
+  const newName=prompt(`"${currentName}"의 이름을 수정합니다.\n새 이름을 입력하세요:`, currentName);
+  if(!newName||newName.trim()===currentName)return;
+  const trimmed=newName.trim();
+  if(!confirm(`"${currentName}" → "${trimmed}"으로 변경할까요?\n구글 시트의 모든 기록도 함께 변경됩니다.`))return;
+  applyRenameStudent(currentName, trimmed);
+}
+
+function applyRenameStudent(oldName, newName){
+  const url=localStorage.getItem('att_script_url')||'';
+  setRecordsStatus(`"${oldName}" → "${newName}" 변경 중…`,'var(--amber)');
+
+  // Save to renames map — will be embedded in next QR so student phones auto-update
+  const renames=ld('att_renames',{});
+  renames[oldName]=newName;
+  sv('att_renames',renames);
+  // Also persist to Google Sheet so it survives browser cache clears
+  saveRenameToSheet(oldName, newName);
+  // Show reminder banner on QR tab
+  updateRenameBanner();
+
+  // Update local records
+  const att=ld('att_records',{});
+  if(att[oldName]){
+    att[newName]=att[newName]||{};
+    Object.keys(att[oldName]).forEach(si=>{
+      att[newName][si]=att[newName][si]||{};
+      Object.assign(att[newName][si],att[oldName][si]);
+    });
+    delete att[oldName];
+    sv('att_records',att);
+  }
+
+  closeDetailPanel();
+
+  if(!url){
+    setRecordsStatus('로컬만 변경됨 — 구글 시트는 수동으로 수정하세요','var(--amber)');
+    renderRecords();return;
+  }
+
+  // Update Google Sheet via rename action
+  const params=new URLSearchParams({action:'rename',oldName,newName});
+  const cbName='_rn'+Date.now();
+  const script=document.createElement('script');
+  const timer=setTimeout(()=>{
+    delete window[cbName];script.remove();
+    setRecordsStatus('시간 초과 — Refresh로 확인하세요','var(--red)');
+  },15000);
+  window[cbName]=function(data){
+    clearTimeout(timer);delete window[cbName];script.remove();
+    if(data&&data.status==='ok'){
+      setRecordsStatus(`✓ "${oldName}" → "${newName}" 변경 완료`,'var(--green)');
+    }else{
+      setRecordsStatus('오류: '+(data&&data.message||'알 수 없음'),'var(--red)');
+    }
+    setTimeout(()=>renderRecords(),1000);
+  };
+  script.src=url+'?'+params.toString()+'&callback='+cbName;
+  document.head.appendChild(script);
 }
 
 function closeDetailPanel(){
@@ -1203,8 +1338,37 @@ function applyManualAttendance(){
   document.head.appendChild(script);
 }
 
-// Start polling on load
+// Start polling
 startRecordsPoll();
+
+// Listen for rename confirmations from student pages
+function cleanAppliedRenames(){
+  const renames=ld('att_renames',{});
+  const applied=ld('att_renames_applied',{});
+  let changed=false;
+  Object.keys(applied).forEach(oldName=>{
+    if(renames[oldName]){
+      deleteRenameFromSheet(oldName); // remove from Google Sheet too
+      delete renames[oldName];
+      changed=true;
+    }
+    delete applied[oldName];
+  });
+  if(changed){sv('att_renames',renames);sv('att_renames_applied',{});}
+}
+
+// BroadcastChannel — same browser
+if(typeof BroadcastChannel!=='undefined'){
+  const bc=new BroadcastChannel('att_sync');
+  bc.onmessage=e=>{
+    if(e.data&&e.data.type==='rename_applied') cleanAppliedRenames();
+    if(e.data==='att_records') onAttendanceUpdate?.();
+  };
+}
+// Storage event — different tabs
+window.addEventListener('storage',e=>{
+  if(e.key==='att_renames_applied') cleanAppliedRenames();
+});
 </script>
 </body>
 </html>

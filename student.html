@@ -165,16 +165,15 @@ function renderNameCard(){
     card.innerHTML=`
       <div class="name-display">
         <span class="name-text">👤 ${saved}</span>
-        <button class="name-edit" onclick="editName()">이름 수정</button>
       </div>
       <div style="font-size:11px;font-family:monospace;color:var(--text-faint);margin-top:8px;">
-        이름이 잘못되었나요? 오른쪽 버튼을 눌러 수정하세요.
+        이름 변경이 필요하면 교사에게 문의하세요.
       </div>`;
   }else{
     card.innerHTML=`
       <input type="text" id="student-name" placeholder="성명을 입력하세요 (예: 홍길동)" autocomplete="name" oninput="onNameInput()" style="font-size:16px;padding:12px;">
       <div style="font-size:11px;font-family:monospace;color:var(--text-faint);margin-top:8px;">
-        정확하게 입력해 주세요. 한 번 저장되면 다음 수업부터 자동으로 입력됩니다.
+        정확하게 입력해 주세요. 한 번 저장되면 이후 변경할 수 없습니다.
       </div>`;
   }
   renderHistory();
@@ -186,11 +185,8 @@ function onNameInput(){
   const btn=document.getElementById('auto-checkin-btn');
   const sub=document.getElementById('checkin-btn-sub');
   if(!btn)return;
-
   if(!name){btn.style.display='none';return;}
-
   if(activeToken){
-    // 체크인 대기 중 — 이름 입력 후 체크인 버튼 표시
     const SESSIONS=getSessions();const HOURS=getHours();
     const sessLabel=SESSIONS[activeToken.session]?.date?fmtDate(SESSIONS[activeToken.session].date):'Day '+(activeToken.session+1);
     const hourLabel=HOURS[activeToken.hour]?.time||('Hour '+(activeToken.hour+1));
@@ -204,37 +200,7 @@ function onNameInput(){
       processCheckIn(JSON.stringify(activeToken));
     };
   } else {
-    // 이름 수정 중 (토큰 없음) — 이름 저장 버튼 표시
-    if(sub)sub.textContent='탭하여 저장';
-    btn.querySelector('.btn-main-text').textContent='이름 저장';
-    btn.style.display='block';
-    btn.onclick=()=>{
-      const n=document.getElementById('student-name')?.value.trim();
-      if(!n){alert('이름을 입력해 주세요.');return;}
-      const old=previousName||'';
-      // 로컬 기록을 새 이름으로 이전
-      if(old&&old!==n){
-        const att=ld('att_records',{});
-        if(att[old]){
-          att[n]=att[n]||{};
-          // 이전 이름 기록을 새 이름으로 합치기
-          Object.keys(att[old]).forEach(si=>{
-            att[n][si]=att[n][si]||{};
-            Object.assign(att[n][si],att[old][si]);
-          });
-          delete att[old];
-          sv('att_records',att);
-        }
-        // 시트에도 이름 변경 알림 — rename 액션으로 전송
-        renameInSheet(old, n);
-      }
-      setSavedName(n);
-      previousName=null;
-      btn.style.display='none';
-      document.getElementById('auto-result-box').className='result-box';
-      renderNameCard();
-      renderHistory();
-    };
+    btn.style.display='none';
   }
 }
 function editName(){
@@ -346,6 +312,39 @@ function processCheckIn(raw){
   }
   if(token.scriptUrl){
     localStorage.setItem('att_script_url', token.scriptUrl);
+  }
+
+  // Apply any pending name corrections from teacher
+  if(token.renames&&typeof token.renames==='object'){
+    const currentSaved=getSavedName();
+    if(currentSaved&&token.renames[currentSaved]){
+      const newName=token.renames[currentSaved];
+      // Update local records to new name
+      const att=ld('att_records',{});
+      if(att[currentSaved]){
+        att[newName]=att[newName]||{};
+        Object.keys(att[currentSaved]).forEach(si=>{
+          att[newName][si]=att[newName][si]||{};
+          Object.assign(att[newName][si],att[currentSaved][si]);
+        });
+        delete att[currentSaved];
+        sv('att_records',att);
+      }
+      setSavedName(newName);
+      showAutoResult('warn','✏️',`이름이 "${currentSaved}"에서 "${newName}"으로 수정되었습니다.`);
+      renderNameCard();
+
+      // Notify teacher page to remove this rename from the pending list
+      // Uses BroadcastChannel (same browser) or localStorage event
+      try{
+        const bc=new BroadcastChannel('att_sync');
+        bc.postMessage({type:'rename_applied', oldName:currentSaved, newName});
+      }catch(e){}
+      // Also write to localStorage so teacher page picks it up across tabs
+      const applied=ld('att_renames_applied',{});
+      applied[currentSaved]=Date.now();
+      sv('att_renames_applied',applied);
+    }
   }
 
   const attendance=ld('att_records',{});

@@ -361,6 +361,28 @@
 
   <!-- Settings Tab -->
   <div id="panel-settings" class="panel">
+
+    <div class="section-label">Google Sheets sync</div>
+    <div class="card">
+      <div class="settings-note" style="margin-bottom:10px;">Paste your Apps Script Web App URL here to sync attendance to Google Sheets automatically.</div>
+      <div class="field-group">
+        <div class="field-label">Apps Script Web App URL</div>
+        <input type="text" id="script-url" placeholder="https://script.google.com/macros/s/…/exec" style="width:100%;font-size:11px;" oninput="saveScriptURL()">
+      </div>
+      <div class="field-group">
+        <div class="field-label">Secret Key (must match Apps Script)</div>
+        <input type="text" id="secret-key" placeholder="e.g. MySecretKey2025" style="width:100%;font-family:monospace;" oninput="saveSecretKey()">
+      </div>
+      <div id="script-url-msg" style="font-size:12px;font-family:monospace;margin-bottom:8px;display:none;"></div>
+      <div class="btn-row" style="justify-content:flex-start;margin-top:4px;flex-wrap:wrap;">
+        <button class="btn btn-sm" onclick="runDiagnostic()">🔍 Run diagnostic</button>
+        <button class="btn btn-sm btn-primary" onclick="saveSettingsToSheet()">☁️ Save all settings to Sheet</button>
+        <button class="btn btn-sm" onclick="loadSettingsFromSheet()">↺ Restore from Sheet</button>
+      </div>
+      <div id="diag-output" style="display:none;margin-top:12px;background:var(--surface2);border-radius:var(--radius);padding:12px;font-family:monospace;font-size:11px;line-height:1.8;"></div>
+      <div id="settings-sync-msg" style="font-size:12px;font-family:monospace;margin-top:8px;display:none;"></div>
+    </div>
+
     <div class="section-label">Geofencing</div>
     <div class="card">
       <div class="row" style="margin-bottom:14px;">
@@ -384,20 +406,6 @@
           <button class="btn btn-sm" onclick="saveManualGPS()">Save</button>
         </div>
       </div>
-    </div>
-
-    <div class="section-label">Google Sheets sync</div>
-    <div class="card">
-      <div class="settings-note" style="margin-bottom:10px;">Paste your Apps Script Web App URL here to sync attendance to Google Sheets automatically.</div>
-      <div class="field-group">
-        <div class="field-label">Apps Script Web App URL</div>
-        <input type="text" id="script-url" placeholder="https://script.google.com/macros/s/…/exec" style="width:100%;font-size:11px;" oninput="saveScriptURL()">
-      </div>
-      <div id="script-url-msg" style="font-size:12px;font-family:monospace;margin-bottom:8px;display:none;"></div>
-      <div class="btn-row" style="justify-content:flex-start;margin-top:4px;">
-        <button class="btn btn-sm" onclick="runDiagnostic()">🔍 Run diagnostic</button>
-      </div>
-      <div id="diag-output" style="display:none;margin-top:12px;background:var(--surface2);border-radius:var(--radius);padding:12px;font-family:monospace;font-size:11px;line-height:1.8;"></div>
     </div>
 
     <div class="section-label">Change password</div>
@@ -476,6 +484,7 @@ function initApp(){
   document.getElementById('course-number').value=state.courseNumber;
   document.getElementById('teacher-name').value=state.teacherName;
   document.getElementById('script-url').value=localStorage.getItem('att_script_url')||'';
+  document.getElementById('secret-key').value=getSecretKey();
   document.getElementById('geo-radius').addEventListener('input',updateGeoBadge);
   updateHeader(); renderSessionChips(); renderSessionsTable(); renderHourTimeInputs();
   applyTestMode();
@@ -569,6 +578,7 @@ function makeTokenPayload(si,hi){
     sessionDate:state.sessions[si]?.date||'',
     testMode,
     scriptUrl:localStorage.getItem('att_script_url')||'',
+    secretKey:getSecretKey(),
     renames:ld('att_renames',{}), // pending name corrections for students
   };
 }
@@ -654,6 +664,108 @@ function saveScriptURL(){
   msg.style.display=url?'block':'none';
   msg.style.color='var(--text-muted)';
   msg.textContent=url?'URL saved.':'';
+}
+
+function saveSecretKey(){
+  const key=document.getElementById('secret-key').value.trim();
+  localStorage.setItem('att_secret_key',key);
+}
+
+function getSecretKey(){return localStorage.getItem('att_secret_key')||'';}
+
+// Attach secret key to every JSONP request
+function buildURL(baseUrl,params){
+  const key=getSecretKey();
+  if(key) params.key=key;
+  return baseUrl+'?'+new URLSearchParams(params).toString();
+}
+
+// ── URL parameter recovery (method 2) ────────────────────────────────────────
+// Opening teacher.html?s=SCRIPT_URL saves the URL and restores settings from sheet
+(function recoverFromURL(){
+  const params=new URLSearchParams(window.location.search);
+  const s=params.get('s');
+  if(s){
+    localStorage.setItem('att_script_url',s);
+    window.history.replaceState({},'',window.location.pathname);
+  }
+})();
+
+// ── Settings sync ─────────────────────────────────────────────────────────────
+function showSettingsMsg(msg,color){
+  const el=document.getElementById('settings-sync-msg');
+  if(!el)return;
+  el.style.display='block';el.style.color=color||'var(--text-muted)';el.textContent=msg;
+}
+
+function saveSettingsToSheet(){
+  const url=localStorage.getItem('att_script_url')||'';
+  if(!url){showSettingsMsg('Script URL이 없습니다. 먼저 URL을 입력하세요.','var(--red)');return;}
+  showSettingsMsg('저장 중…');
+  const params={
+    action:'save_settings',
+    courseTitle:state.courseTitle||'',
+    courseNumber:state.courseNumber||'',
+    teacherName:state.teacherName||'',
+    scriptUrl:url,
+    secretKey:getSecretKey(),
+    classroomLat:state.classroomLat||'',
+    classroomLng:state.classroomLng||'',
+    geoRadius:document.getElementById('geo-radius').value||'50',
+    geoEnabled:document.getElementById('geo-toggle').checked?'true':'false',
+    sessions:JSON.stringify(state.sessions),
+    hours:JSON.stringify(state.hours),
+    password:getPassword(),
+  };
+  const cbName='_ss'+Date.now();
+  const script=document.createElement('script');
+  const timer=setTimeout(()=>{delete window[cbName];script.remove();showSettingsMsg('시간 초과','var(--red)');},15000);
+  window[cbName]=function(data){
+    clearTimeout(timer);delete window[cbName];script.remove();
+    if(data&&data.status==='ok')showSettingsMsg('✓ 구글 시트에 저장 완료','var(--green)');
+    else showSettingsMsg('오류: '+(data&&data.message||'알 수 없음'),'var(--red)');
+  };
+  script.src=buildURL(url,params)+'&callback='+cbName;
+  document.head.appendChild(script);
+}
+
+function loadSettingsFromSheet(){
+  const url=localStorage.getItem('att_script_url')||'';
+  if(!url){showSettingsMsg('Script URL이 없습니다.','var(--red)');return;}
+  showSettingsMsg('불러오는 중…');
+  const cbName='_ls'+Date.now();
+  const script=document.createElement('script');
+  const timer=setTimeout(()=>{delete window[cbName];script.remove();showSettingsMsg('시간 초과','var(--red)');},15000);
+  window[cbName]=function(data){
+    clearTimeout(timer);delete window[cbName];script.remove();
+    if(!data||data.status!=='ok'){showSettingsMsg('오류: '+(data&&data.message||'알 수 없음'),'var(--red)');return;}
+    const s=data.settings||{};
+    if(s.courseTitle){state.courseTitle=s.courseTitle;document.getElementById('course-title').value=s.courseTitle;}
+    if(s.courseNumber){state.courseNumber=s.courseNumber;document.getElementById('course-number').value=s.courseNumber;}
+    if(s.teacherName){state.teacherName=s.teacherName;document.getElementById('teacher-name').value=s.teacherName;}
+    if(s.secretKey){localStorage.setItem('att_secret_key',s.secretKey);document.getElementById('secret-key').value=s.secretKey;}
+    if(s.classroomLat&&s.classroomLng){
+      state.classroomLat=parseFloat(s.classroomLat);
+      state.classroomLng=parseFloat(s.classroomLng);
+      localStorage.setItem('classroom_lat',s.classroomLat);
+      localStorage.setItem('classroom_lng',s.classroomLng);
+      document.getElementById('teacher-geo-info').textContent=
+        `GPS: ${parseFloat(s.classroomLat).toFixed(5)}, ${parseFloat(s.classroomLng).toFixed(5)} ✓ Restored`;
+    }
+    if(s.geoRadius){document.getElementById('geo-radius').value=s.geoRadius;}
+    if(s.geoEnabled){
+      const enabled=s.geoEnabled==='true';
+      document.getElementById('geo-toggle').checked=enabled;
+      document.getElementById('radius-row').style.display=enabled?'flex':'none';
+    }
+    if(s.sessions){try{state.sessions=JSON.parse(s.sessions);sv('att_sessions',state.sessions);renderSessionsTable();renderSessionChips();}catch(e){}}
+    if(s.hours){try{state.hours=JSON.parse(s.hours);sv('att_hours',state.hours);renderHourTimeInputs();}catch(e){}}
+    if(s.password){localStorage.setItem('att_pw',s.password);}
+    updateHeader();
+    showSettingsMsg('✓ 시트에서 설정 복구 완료','var(--green)');
+  };
+  script.src=buildURL(url,{action:'get_settings'})+'&callback='+cbName;
+  document.head.appendChild(script);
 }
 
 function diagLog(lines, line, color){
@@ -917,7 +1029,7 @@ function renderRecords(){
     return;
   }
   setRecordsStatus('Loading from Google Sheets…');
-  jsonpFetch(url+'?action=get_records',(data,err)=>{
+  jsonpFetch(buildURL(url,{action:'get_records'}),(data,err)=>{
     if(err||!data||data.status!=='ok'){
       renderRecordsFromData(ld('att_records',{}));
       setRecordsStatus('Could not reach Google Sheets — showing local data','var(--red)');
@@ -988,7 +1100,7 @@ function loadRenamesFromSheet(){
       updateRenameBanner();
     }
   };
-  script.src=url+'?action=get_renames&callback='+cbName;
+  script.src=buildURL(url,{action:'get_renames'})+'&callback='+cbName;
   document.head.appendChild(script);
 }
 
@@ -1004,24 +1116,22 @@ function startRenamesPoll(){
 function saveRenameToSheet(oldName, newName){
   const url=localStorage.getItem('att_script_url')||'';
   if(!url)return;
-  const params=new URLSearchParams({action:'save_rename',oldName,newName});
   const cbName='_sr'+Date.now();
   const script=document.createElement('script');
   const timer=setTimeout(()=>{delete window[cbName];script.remove();},10000);
   window[cbName]=function(){clearTimeout(timer);delete window[cbName];script.remove();};
-  script.src=url+'?'+params.toString()+'&callback='+cbName;
+  script.src=buildURL(url,{action:'save_rename',oldName,newName})+'&callback='+cbName;
   document.head.appendChild(script);
 }
 
 function deleteRenameFromSheet(oldName){
   const url=localStorage.getItem('att_script_url')||'';
   if(!url)return;
-  const params=new URLSearchParams({action:'delete_rename',oldName});
   const cbName='_dr'+Date.now();
   const script=document.createElement('script');
   const timer=setTimeout(()=>{delete window[cbName];script.remove();},10000);
   window[cbName]=function(){clearTimeout(timer);delete window[cbName];script.remove();};
-  script.src=url+'?'+params.toString()+'&callback='+cbName;
+  script.src=buildURL(url,{action:'delete_rename',oldName})+'&callback='+cbName;
   document.head.appendChild(script);
 }
 

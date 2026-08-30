@@ -229,6 +229,12 @@ function haversine(a,b,c,d){const R=6371000,dL=(c-a)*Math.PI/180,dl=(d-b)*Math.P
 
 // ── Google Sheets sync ────────────────────────────────────────────────────────
 function getScriptURL(){return localStorage.getItem('att_script_url')||'';}
+function getSecretKey(){return localStorage.getItem('att_secret_key')||'';}
+function buildStudentURL(baseUrl,params){
+  const key=getSecretKey();
+  if(key)params.key=key;
+  return baseUrl+'?'+new URLSearchParams(params).toString();
+}
 
 function showSyncStatus(msg,color){
   let el=document.getElementById('sync-status');
@@ -289,7 +295,20 @@ function sendToSheet(payload){
     showSyncStatus('❌ Script blocked — URL may be wrong or CSP is blocking it','var(--red)');
   };
 
-  script.src=url+'?'+params.toString()+'&callback='+cbName;
+  script.src=buildStudentURL(url,{
+    action:       'checkin',
+    name:         payload.name         ||'',
+    previousName: payload.previousName ||'',
+    session:      payload.session,
+    hour:         payload.hour,
+    sessionDate:  payload.sessionDate  ||'',
+    hourLabel:    payload.hourLabel    ||'',
+    checkInTime:  payload.checkInTime  ||'',
+    dist:         payload.dist!==null&&payload.dist!==undefined?payload.dist:'',
+    courseTitle:  payload.courseTitle  ||'',
+    courseNumber: payload.courseNumber ||'',
+    teacherName:  payload.teacherName  ||'',
+  })+'&callback='+cbName;
   document.head.appendChild(script);
   showSyncStatus('Connecting to: '+url.slice(0,60)+'…');
 }
@@ -308,6 +327,9 @@ function processCheckIn(raw){
   // Save script URL from token FIRST — needed for delete_rename below
   if(token.scriptUrl){
     localStorage.setItem('att_script_url', token.scriptUrl);
+  }
+  if(token.secretKey){
+    localStorage.setItem('att_secret_key', token.secretKey);
   }
 
   // Save course info from token
@@ -340,12 +362,11 @@ function processCheckIn(raw){
       // Delete from Renames sheet so teacher banner disappears
       const url=getScriptURL();
       if(url){
-        const params=new URLSearchParams({action:'delete_rename',oldName:currentSaved});
         const cbName='_dr'+Date.now();
         const script=document.createElement('script');
         const timer=setTimeout(()=>{delete window[cbName];script.remove();},10000);
         window[cbName]=function(){clearTimeout(timer);delete window[cbName];script.remove();};
-        script.src=url+'?'+params.toString()+'&callback='+cbName;
+        script.src=buildStudentURL(url,{action:'delete_rename',oldName:currentSaved})+'&callback='+cbName;
         document.head.appendChild(script);
       }
 
@@ -482,8 +503,7 @@ function renderHistory(){
     sv('att_records',att);
     renderGrid(merged);
   };
-  const params=new URLSearchParams({action:'get_student_records',name});
-  script.src=url+'?'+params.toString()+'&callback='+cbName;
+  script.src=buildStudentURL(url,{action:'get_student_records',name})+'&callback='+cbName;
   document.head.appendChild(script);
 }
 
@@ -491,16 +511,11 @@ function renderHistory(){
 function renameInSheet(oldName, newName){
   const url=getScriptURL();
   if(!url||!oldName||!newName||oldName===newName)return;
-  const params=new URLSearchParams({
-    action:'rename',
-    oldName,
-    newName,
-  });
   const cbName='_rn'+Date.now();
   const script=document.createElement('script');
   const timer=setTimeout(()=>{delete window[cbName];script.remove();},15000);
   window[cbName]=function(){clearTimeout(timer);delete window[cbName];script.remove();renderHistory();};
-  script.src=url+'?'+params.toString()+'&callback='+cbName;
+  script.src=buildStudentURL(url,{action:'rename',oldName,newName})+'&callback='+cbName;
   document.head.appendChild(script);
 }
 

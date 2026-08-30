@@ -228,6 +228,7 @@
         </div>
         <div class="btn-row">
           <button class="btn btn-primary" onclick="generateQR(state.selectedSession,state.selectedHour)">↺ Refresh now</button>
+          <button class="btn" style="background:var(--blue-bg);color:var(--blue);border-color:var(--blue-border);" onclick="openDisplay()">📺 Display</button>
           <button class="btn" onclick="document.getElementById('qr-section').style.display='none'">Close</button>
         </div>
       </div>
@@ -573,6 +574,11 @@ function startTimer(){
     document.getElementById('timer-label').textContent=rem>0?`Refreshes in ${Math.ceil(rem/1000)}s`:'Refreshing…';
     if(rem<=2000&&state.selectedSession!==null&&state.selectedHour!==null)generateQR(state.selectedSession,state.selectedHour);
   },1000);
+}
+
+// ── Display window ────────────────────────────────────────────────────────────
+function openDisplay(){
+  window.open('display.html','att_display','width=1024,height=768');
 }
 
 // ── Testing mode ──────────────────────────────────────────────────────────────

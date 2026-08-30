@@ -211,7 +211,25 @@ function onNameInput(){
     btn.onclick=()=>{
       const n=document.getElementById('student-name')?.value.trim();
       if(!n){alert('이름을 입력해 주세요.');return;}
+      const old=previousName||'';
+      // 로컬 기록을 새 이름으로 이전
+      if(old&&old!==n){
+        const att=ld('att_records',{});
+        if(att[old]){
+          att[n]=att[n]||{};
+          // 이전 이름 기록을 새 이름으로 합치기
+          Object.keys(att[old]).forEach(si=>{
+            att[n][si]=att[n][si]||{};
+            Object.assign(att[n][si],att[old][si]);
+          });
+          delete att[old];
+          sv('att_records',att);
+        }
+        // 시트에도 이름 변경 알림 — rename 액션으로 전송
+        renameInSheet(old, n);
+      }
       setSavedName(n);
+      previousName=null;
       btn.style.display='none';
       document.getElementById('auto-result-box').className='result-box';
       renderNameCard();
@@ -453,6 +471,23 @@ function renderHistory(){
     renderGrid(merged);
   };
   script.src=url+'?action=get_records&callback='+cbName;
+  document.head.appendChild(script);
+}
+
+// ── Rename in sheet ───────────────────────────────────────────────────────────
+function renameInSheet(oldName, newName){
+  const url=getScriptURL();
+  if(!url||!oldName||!newName||oldName===newName)return;
+  const params=new URLSearchParams({
+    action:'rename',
+    oldName,
+    newName,
+  });
+  const cbName='_rn'+Date.now();
+  const script=document.createElement('script');
+  const timer=setTimeout(()=>{delete window[cbName];script.remove();},15000);
+  window[cbName]=function(){clearTimeout(timer);delete window[cbName];script.remove();renderHistory();};
+  script.src=url+'?'+params.toString()+'&callback='+cbName;
   document.head.appendChild(script);
 }
 

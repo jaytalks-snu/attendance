@@ -370,8 +370,9 @@
         <input type="text" id="script-url" placeholder="https://script.google.com/macros/s/…/exec" style="width:100%;font-size:11px;" oninput="saveScriptURL()">
       </div>
       <div class="field-group">
-        <div class="field-label">Secret Key (must match Apps Script)</div>
-        <input type="text" id="secret-key" placeholder="e.g. MySecretKey2025" style="width:100%;font-family:monospace;" oninput="saveSecretKey()">
+        <div class="field-label">Secret Key (must match Apps Script) — 영문과 숫자만 사용</div>
+        <input type="text" id="secret-key" placeholder="e.g. MyClass2025" style="width:100%;font-family:monospace;" oninput="saveSecretKey()">
+        <div style="font-size:11px;color:var(--text-faint);font-family:monospace;margin-top:4px;">⚠️ 한글 사용 불가 — 영문, 숫자, 특수문자만 사용하세요</div>
       </div>
       <div id="script-url-msg" style="font-size:12px;font-family:monospace;margin-bottom:8px;display:none;"></div>
       <div class="btn-row" style="justify-content:flex-start;margin-top:4px;flex-wrap:wrap;">

@@ -253,6 +253,38 @@
     <!-- Manual attendance panel -->
     <div class="card" id="manual-att-card" style="display:none;margin-bottom:12px;border-color:var(--amber-border);background:var(--amber-bg);">
       <div style="font-size:13px;font-weight:500;color:var(--amber);margin-bottom:10px;">✏️ 수동 출석 처리</div>
+
+      <!-- Copy from previous hour shortcut -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:12px;">
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">⚡ 이전 시간 출석자 복사</div>
+        <div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:8px;">
+          <div style="flex:1;min-width:120px;">
+            <div class="field-label">복사할 Day</div>
+            <select id="copy-session" style="width:100%;padding:5px 8px;border:1px solid var(--border-strong);border-radius:var(--radius);font-size:12px;font-family:monospace;background:var(--surface);"></select>
+          </div>
+          <div style="flex:1;min-width:100px;">
+            <div class="field-label">기준 Hour (출처)</div>
+            <select id="copy-from-hour" style="width:100%;padding:5px 8px;border:1px solid var(--border-strong);border-radius:var(--radius);font-size:12px;font-family:monospace;background:var(--surface);">
+              <option value="0">Hour 1</option>
+              <option value="1">Hour 2</option>
+              <option value="2">Hour 3</option>
+            </select>
+          </div>
+          <div style="flex:1;min-width:100px;">
+            <div class="field-label">복사 대상 Hour</div>
+            <select id="copy-to-hour" style="width:100%;padding:5px 8px;border:1px solid var(--border-strong);border-radius:var(--radius);font-size:12px;font-family:monospace;background:var(--surface);">
+              <option value="1">Hour 2</option>
+              <option value="2">Hour 3</option>
+              <option value="3">Hour 4</option>
+            </select>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);font-family:monospace;margin-bottom:8px;" id="copy-preview"></div>
+        <button class="btn btn-sm btn-primary" onclick="copyPrevHourAttendance()">⚡ 복사 실행</button>
+      </div>
+
+      <div style="border-top:1px solid var(--border);margin-bottom:12px;"></div>
+
       <div class="row" style="margin-bottom:10px;flex-wrap:wrap;gap:8px;">
         <div style="flex:1;min-width:140px;">
           <div class="field-label">Day</div>
@@ -965,10 +997,98 @@ let manualTarget={si:null,hi:null,name:null};
 
 function buildManualSessionOptions(){
   const sel=document.getElementById('manual-session');
+  const copySel=document.getElementById('copy-session');
   if(!sel)return;
-  sel.innerHTML=state.sessions.map((s,i)=>
+  const opts=state.sessions.map((s,i)=>
     `<option value="${i}">Day ${i+1}${s.date?' · '+fmtDate(s.date):''}</option>`
   ).join('');
+  sel.innerHTML=opts;
+  if(copySel){ copySel.innerHTML=opts; updateCopyPreview(); }
+}
+
+function updateCopyPreview(){
+  const si=parseInt(document.getElementById('copy-session').value);
+  const fromHi=parseInt(document.getElementById('copy-from-hour').value);
+  const toHi=parseInt(document.getElementById('copy-to-hour').value);
+  const s=state.sessions[si];
+  const attendance=state.attendance||{};
+  const students=Object.keys(attendance).filter(name=>attendance[name]?.[si]?.[fromHi]);
+  const el=document.getElementById('copy-preview');
+  if(!el)return;
+  el.textContent=`Hour ${fromHi+1} 출석자 ${students.length}명 → Hour ${toHi+1}로 복사`;
+}
+
+function copyPrevHourAttendance(){
+  const si=parseInt(document.getElementById('copy-session').value);
+  const fromHi=parseInt(document.getElementById('copy-from-hour').value);
+  const toHi=parseInt(document.getElementById('copy-to-hour').value);
+
+  if(fromHi===toHi){
+    alert('출처와 대상 Hour가 같습니다. 다르게 선택해주세요.');return;
+  }
+
+  const url=localStorage.getItem('att_script_url')||'';
+  const s=state.sessions[si];
+  const course=ld('att_course_pub',{});
+  const attendance=state.attendance||{};
+
+  // Find students who attended the source hour
+  const targets=Object.keys(attendance).filter(name=>attendance[name]?.[si]?.[fromHi]);
+
+  if(!targets.length){
+    alert(`Hour ${fromHi+1}에 출석한 학생이 없습니다.`);return;
+  }
+
+  const confirmed=confirm(`Hour ${fromHi+1} 출석자 ${targets.length}명을 Hour ${toHi+1}에도 출석 처리할까요?\n\n${targets.join('\n')}`);
+  if(!confirmed)return;
+
+  const now=new Date();
+  const timeStr=now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+
+  // Build items for bulk request
+  const items=targets.map(name=>({
+    name,
+    previousName:'',
+    session:si,
+    hour:toHi,
+    sessionDate:s.date||'',
+    hourLabel:state.hours[toHi]?.time||('Hour '+(toHi+1)),
+    checkInTime:timeStr,
+    dist:null,
+    courseTitle:course.title||'',
+    courseNumber:course.number||'',
+    teacherName:course.teacher||'',
+  }));
+
+  setRecordsStatus(`Hour ${fromHi+1} → Hour ${toHi+1} 복사 중 (${items.length}명)…`,'var(--amber)');
+  closeManualPanel();
+
+  // Send as single bulk request
+  const cbName='_copy'+Date.now();
+  const script=document.createElement('script');
+  const timer=setTimeout(()=>{
+    delete window[cbName];script.remove();
+    setRecordsStatus('시간 초과 — Refresh를 눌러 확인해 주세요.','var(--red)');
+  },60000);
+  window[cbName]=function(data){
+    clearTimeout(timer);delete window[cbName];script.remove();
+    if(data&&data.status==='ok'){
+      setRecordsStatus(`✓ ${items.length}명 복사 완료`,'var(--green)');
+    }else{
+      setRecordsStatus('오류: '+(data&&data.message||'알 수 없는 오류'),'var(--red)');
+    }
+    setTimeout(()=>renderRecords(),1500);
+  };
+  script.onerror=function(){
+    clearTimeout(timer);delete window[cbName];script.remove();
+    setRecordsStatus('연결 오류','var(--red)');
+  };
+  const params=new URLSearchParams({
+    action:'bulk_checkin',
+    items:JSON.stringify(items),
+  });
+  script.src=url+'?'+params.toString()+'&callback='+cbName;
+  document.head.appendChild(script);
 }
 
 function openManualPanel(si,hi,name){
@@ -981,6 +1101,13 @@ function openManualPanel(si,hi,name){
   card.scrollIntoView({behavior:'smooth',block:'nearest'});
   document.getElementById('manual-session').onchange=updateManualLabel;
   document.getElementById('manual-hour').onchange=updateManualLabel;
+  // Copy dropdowns
+  const cs=document.getElementById('copy-session');
+  const cfh=document.getElementById('copy-from-hour');
+  const cth=document.getElementById('copy-to-hour');
+  if(cs)cs.onchange=updateCopyPreview;
+  if(cfh)cfh.onchange=updateCopyPreview;
+  if(cth)cth.onchange=updateCopyPreview;
 }
 
 function updateManualLabel(){

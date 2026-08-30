@@ -335,7 +335,19 @@ function processCheckIn(raw){
       showAutoResult('warn','✏️',`이름이 "${currentSaved}"에서 "${newName}"으로 수정되었습니다.`);
       renderNameCard();
 
-      // Notify teacher page
+      // Delete from Renames sheet so teacher banner disappears
+      const url=getScriptURL();
+      if(url){
+        const params=new URLSearchParams({action:'delete_rename',oldName:currentSaved});
+        const cbName='_dr'+Date.now();
+        const script=document.createElement('script');
+        const timer=setTimeout(()=>{delete window[cbName];script.remove();},10000);
+        window[cbName]=function(){clearTimeout(timer);delete window[cbName];script.remove();};
+        script.src=url+'?'+params.toString()+'&callback='+cbName;
+        document.head.appendChild(script);
+      }
+
+      // Also notify via BroadcastChannel (same device fallback)
       try{new BroadcastChannel('att_sync').postMessage({type:'rename_applied',oldName:currentSaved,newName});}catch(e){}
       const applied=ld('att_renames_applied',{});
       applied[currentSaved]=Date.now();

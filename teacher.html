@@ -482,6 +482,7 @@ function initApp(){
 
   // Load renames from Google Sheet on startup (survives browser cache clears)
   loadRenamesFromSheet();
+  startRenamesPoll();
 }
 
 function saveCourseInfo(){
@@ -982,15 +983,24 @@ function loadRenamesFromSheet(){
   const timer=setTimeout(()=>{delete window[cbName];script.remove();},10000);
   window[cbName]=function(data){
     clearTimeout(timer);delete window[cbName];script.remove();
-    if(data&&data.status==='ok'&&data.renames){
-      const local=ld('att_renames',{});
-      Object.assign(local,data.renames);
-      sv('att_renames',local);
-      updateRenameBanner(); // reflect loaded renames in banner
+    if(data&&data.status==='ok'){
+      // Sheet is authoritative — replace local renames entirely
+      // If student confirmed a rename, it's deleted from sheet, so it disappears here too
+      sv('att_renames',data.renames||{});
+      updateRenameBanner();
     }
   };
   script.src=url+'?action=get_renames&callback='+cbName;
   document.head.appendChild(script);
+}
+
+// Poll renames from sheet every 30s — detects when student has confirmed (entry deleted from sheet)
+let renamesPollInterval=null;
+function startRenamesPoll(){
+  if(renamesPollInterval)clearInterval(renamesPollInterval);
+  renamesPollInterval=setInterval(()=>{
+    if(Object.keys(ld('att_renames',{})).length>0) loadRenamesFromSheet();
+  },30000);
 }
 
 function saveRenameToSheet(oldName, newName){
@@ -1340,21 +1350,12 @@ startRecordsPoll();
 
 // Listen for rename confirmations from student pages
 function cleanAppliedRenames(){
-  const renames=ld('att_renames',{});
-  const applied=ld('att_renames_applied',{});
-  let changed=false;
-  Object.keys(applied).forEach(oldName=>{
-    if(renames[oldName]){
-      deleteRenameFromSheet(oldName); // remove from Google Sheet too
-      delete renames[oldName];
-      changed=true;
-    }
-    delete applied[oldName];
-  });
-  if(changed){sv('att_renames',renames);sv('att_renames_applied',{});updateRenameBanner();}
+  // Reload from sheet — sheet is authoritative, student page deleted the entry already
+  sv('att_renames_applied',{});
+  loadRenamesFromSheet();
 }
 
-// BroadcastChannel — same browser
+// Same-browser BroadcastChannel (fallback for testing on same device)
 if(typeof BroadcastChannel!=='undefined'){
   const bc=new BroadcastChannel('att_sync');
   bc.onmessage=e=>{
@@ -1362,10 +1363,10 @@ if(typeof BroadcastChannel!=='undefined'){
     if(e.data==='att_records') onAttendanceUpdate?.();
   };
 }
-// Storage event — different tabs
 window.addEventListener('storage',e=>{
   if(e.key==='att_renames_applied') cleanAppliedRenames();
 });
+
 </script>
 </body>
 </html>

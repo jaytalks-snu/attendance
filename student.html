@@ -114,8 +114,8 @@
   <div class="card" id="name-card"></div>
   <div id="auto-result-box" class="result-box" style="margin-bottom:14px;"></div>
   <button id="auto-checkin-btn" class="checkin-btn">
-    Tap to Check In
-    <span class="btn-sub" id="checkin-btn-sub">Enter your name above first</span>
+    <span class="btn-main-text">Tap to Check In</span>
+    <span class="btn-sub" id="checkin-btn-sub">이름 입력 후 탭하세요</span>
   </button>
 
   <div class="section-label">My attendance — all sessions</div>
@@ -181,16 +181,21 @@ function renderNameCard(){
 }
 
 function onNameInput(){
-  // Show check-in button as soon as name is typed, if there's an active token
-  const name=document.getElementById('student-name')?.value.trim();
+  const input=document.getElementById('student-name');
+  const name=input?.value.trim();
   const btn=document.getElementById('auto-checkin-btn');
   const sub=document.getElementById('checkin-btn-sub');
   if(!btn)return;
-  if(name&&activeToken){
+
+  if(!name){btn.style.display='none';return;}
+
+  if(activeToken){
+    // 체크인 대기 중 — 이름 입력 후 체크인 버튼 표시
     const SESSIONS=getSessions();const HOURS=getHours();
     const sessLabel=SESSIONS[activeToken.session]?.date?fmtDate(SESSIONS[activeToken.session].date):'Day '+(activeToken.session+1);
     const hourLabel=HOURS[activeToken.hour]?.time||('Hour '+(activeToken.hour+1));
     if(sub)sub.textContent=sessLabel+' · '+hourLabel;
+    btn.querySelector('.btn-main-text').textContent='Tap to Check In';
     btn.style.display='block';
     btn.onclick=()=>{
       const n=document.getElementById('student-name')?.value.trim();
@@ -198,24 +203,41 @@ function onNameInput(){
       btn.style.display='none';
       processCheckIn(JSON.stringify(activeToken));
     };
-  } else if(!activeToken){
-    // No token — nothing to check in to
-    btn.style.display='none';
+  } else {
+    // 이름 수정 중 (토큰 없음) — 이름 저장 버튼 표시
+    if(sub)sub.textContent='탭하여 저장';
+    btn.querySelector('.btn-main-text').textContent='이름 저장';
+    btn.style.display='block';
+    btn.onclick=()=>{
+      const n=document.getElementById('student-name')?.value.trim();
+      if(!n){alert('이름을 입력해 주세요.');return;}
+      setSavedName(n);
+      btn.style.display='none';
+      document.getElementById('auto-result-box').className='result-box';
+      renderNameCard();
+      renderHistory();
+    };
   }
 }
 function editName(){
-  previousName=getSavedName(); // remember old name for deletion
+  previousName=getSavedName();
   clearSavedName();
   document.getElementById('auto-result-box').className='result-box';
   document.getElementById('auto-checkin-btn').style.display='none';
   const syncEl=document.getElementById('sync-status');
   if(syncEl)syncEl.remove();
   renderNameCard();
-  // Re-show check-in button if there's an active token waiting
-  if(activeToken){
-    setTimeout(()=>showCheckinButton(activeToken), 100);
-  }
-  setTimeout(()=>{const i=document.getElementById('student-name');if(i)i.focus();},50);
+  // After renderNameCard creates the input, focus it and show prompt if token exists
+  setTimeout(()=>{
+    const input=document.getElementById('student-name');
+    if(input){
+      input.focus();
+      // If there's an active token waiting, show instruction
+      if(activeToken){
+        showAutoResult('warn','✏️','위에 이름을 입력하면 체크인 버튼이 나타납니다.');
+      }
+    }
+  },50);
 }
 
 // ── Geolocation util ─────────────────────────────────────────────────────────

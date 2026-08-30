@@ -984,8 +984,6 @@ function loadRenamesFromSheet(){
   window[cbName]=function(data){
     clearTimeout(timer);delete window[cbName];script.remove();
     if(data&&data.status==='ok'){
-      // Sheet is authoritative — replace local renames entirely
-      // If student confirmed a rename, it's deleted from sheet, so it disappears here too
       sv('att_renames',data.renames||{});
       updateRenameBanner();
     }
@@ -994,13 +992,13 @@ function loadRenamesFromSheet(){
   document.head.appendChild(script);
 }
 
-// Poll renames from sheet every 30s — detects when student has confirmed (entry deleted from sheet)
+// Poll renames every 10s — always check sheet directly since student and teacher are on different devices
 let renamesPollInterval=null;
 function startRenamesPoll(){
   if(renamesPollInterval)clearInterval(renamesPollInterval);
   renamesPollInterval=setInterval(()=>{
     if(Object.keys(ld('att_renames',{})).length>0) loadRenamesFromSheet();
-  },30000);
+  },10000);
 }
 
 function saveRenameToSheet(oldName, newName){

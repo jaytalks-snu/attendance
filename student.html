@@ -271,6 +271,8 @@ function sendToSheet(payload){
     clearTimeout(timer);delete window[cbName];script.remove();
     if(data&&data.status==='ok'){
       showSyncStatus('✓ Synced to Google Sheets ('+data.message+')','var(--green)');
+      // Fetch latest records from sheet now that our entry is saved
+      setTimeout(()=>renderHistory(), 500);
     } else {
       showSyncStatus('❌ Sheet error: '+(data&&data.message?data.message:'unknown'),'var(--red)');
     }
@@ -359,7 +361,12 @@ function recordAttendance(name,si,hi,dist){
   const dateNote=s.date?` (${fmtDate(s.date)})`:'';
   const msg=`Checked in for <strong>Day ${si+1}${dateNote}, Hour ${hi+1}</strong> at ${attendance[name][si][hi].time}${geoNote}`;
   showAutoResult('success','✅',msg);
+
+  // Show local data immediately (fast)
   renderHistory();
+
+  // After sheet sync completes (~3s), fetch latest from sheet to reflect any manual entries
+  setTimeout(()=>renderHistory(), 3500);
 }
 
 // ── History grid ──────────────────────────────────────────────────────────────

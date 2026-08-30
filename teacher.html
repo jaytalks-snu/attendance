@@ -841,7 +841,7 @@ function runDiagnostic(){
     clearTimeout(timer); delete window[cbName]; script.remove();
     diagLog(lines,'❌ Script tag failed to load — network error or URL is wrong','var(--red)');
   };
-  script.src=url+'?action=get_records&callback='+cbName;
+  script.src=buildURL(url,{action:'get_records'})+'&callback='+cbName;
   document.head.appendChild(script);
 }
 

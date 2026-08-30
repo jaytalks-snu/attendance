@@ -343,30 +343,57 @@ function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.get
 function fmtDate(iso){if(!iso)return '';const[y,m,d]=iso.split('-');return new Date(y,m-1,d).toLocaleDateString(undefined,{month:'short',day:'numeric'});}
 
 function renderHistory(){
-  const name=getCurrentName();
+  const name=getSavedName(); // 저장된 이름만 — 입력 중인 이름은 조회 불가
   const grid=document.getElementById('history-grid');
   const SESSIONS=getSessions();
   const today=todayStr();
 
   if(!name){
-    grid.innerHTML='<div style="grid-column:1/-1;font-size:12px;font-family:monospace;color:var(--text-faint);padding:8px 0;">Enter your name to see your attendance.</div>';
+    grid.innerHTML='<div style="grid-column:1/-1;font-size:12px;font-family:monospace;color:var(--text-faint);padding:8px 0;">QR 스캔 후 체크인하시면 출석 기록이 표시됩니다.</div>';
     return;
   }
-  const attendance=ld('att_records',{});
-  const rec=attendance[name]||{};
 
-  grid.innerHTML=SESSIONS.map((s,si)=>{
-    const sr=rec[si]||{};
-    const hours=Object.keys(sr).length;
-    const isToday=s.date&&s.date===today;
-    const hasData=hours>0;
-    const dots=Array.from({length:4},(_,hi)=>`<div class="hc-dot${sr[hi]?' p':''}" title="${sr[hi]?sr[hi].time:'absent'}"></div>`).join('');
-    return `<div class="hist-cell${hasData?' has-data':''}${isToday?' today':''}">
-      <div class="hc-day">Day ${si+1}</div>
-      <div class="hc-date">${s.date?fmtDate(s.date):'—'}</div>
-      <div class="hc-hours">${dots}</div>
-    </div>`;
-  }).join('');
+  // 항상 로컬 데이터 먼저 표시
+  function renderGrid(rec){
+    grid.innerHTML=SESSIONS.map((s,si)=>{
+      const sr=rec[si]||{};
+      const hours=Object.keys(sr).length;
+      const isToday=s.date&&s.date===today;
+      const hasData=hours>0;
+      const dots=Array.from({length:4},(_,hi)=>`<div class="hc-dot${sr[hi]?' p':''}" title="${sr[hi]?sr[hi].time:'결석'}"></div>`).join('');
+      return `<div class="hist-cell${hasData?' has-data':''}${isToday?' today':''}">
+        <div class="hc-day">Day ${si+1}</div>
+        <div class="hc-date">${s.date?fmtDate(s.date):'—'}</div>
+        <div class="hc-hours">${dots}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // 로컬 데이터 먼저 표시
+  const localAtt=ld('att_records',{});
+  renderGrid(localAtt[name]||{});
+
+  // 구글 시트에서 최신 데이터 조회 (이름이 저장된 경우에만)
+  const url=getScriptURL();
+  if(!url)return;
+
+  const cbName='_hist'+Date.now();
+  const script=document.createElement('script');
+  const timer=setTimeout(()=>{delete window[cbName];script.remove();},10000);
+  window[cbName]=function(data){
+    clearTimeout(timer);delete window[cbName];script.remove();
+    if(!data||data.status!=='ok')return;
+    const rec=data.records&&data.records[name]||{};
+    // 시트 데이터로 로컬 업데이트 후 화면 갱신
+    const att=ld('att_records',{});
+    if(Object.keys(rec).length>0){
+      att[name]=rec;
+      sv('att_records',att);
+    }
+    renderGrid(att[name]||{});
+  };
+  script.src=url+'?action=get_records&callback='+cbName;
+  document.head.appendChild(script);
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────

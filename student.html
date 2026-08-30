@@ -298,7 +298,7 @@ function sendToSheet(payload){
 function showAutoResult(type,icon,msg){const el=document.getElementById('auto-result-box');el.className='result-box show '+type;el.innerHTML=`<span class="result-icon">${icon}</span>${msg}`;}
 
 function processCheckIn(raw){
-  const name=getCurrentName();
+  let name=getCurrentName();
   if(!name){showAutoResult('warn','✏️','Please enter your name before scanning.');return;}
   let token;
   try{token=JSON.parse(raw);}catch{showAutoResult('error','❌','Invalid check-in link. Please scan the QR code again.');return;}
@@ -314,12 +314,12 @@ function processCheckIn(raw){
     localStorage.setItem('att_script_url', token.scriptUrl);
   }
 
-  // Apply any pending name corrections from teacher
+  // Apply any pending name corrections from teacher — BEFORE proceeding with check-in
   if(token.renames&&typeof token.renames==='object'){
     const currentSaved=getSavedName();
     if(currentSaved&&token.renames[currentSaved]){
       const newName=token.renames[currentSaved];
-      // Update local records to new name
+      // Move local records to new name
       const att=ld('att_records',{});
       if(att[currentSaved]){
         att[newName]=att[newName]||{};
@@ -331,25 +331,23 @@ function processCheckIn(raw){
         sv('att_records',att);
       }
       setSavedName(newName);
+      name=newName; // use new name for the rest of check-in
       showAutoResult('warn','✏️',`이름이 "${currentSaved}"에서 "${newName}"으로 수정되었습니다.`);
       renderNameCard();
 
-      // Notify teacher page to remove this rename from the pending list
-      // Uses BroadcastChannel (same browser) or localStorage event
-      try{
-        const bc=new BroadcastChannel('att_sync');
-        bc.postMessage({type:'rename_applied', oldName:currentSaved, newName});
-      }catch(e){}
-      // Also write to localStorage so teacher page picks it up across tabs
+      // Notify teacher page
+      try{new BroadcastChannel('att_sync').postMessage({type:'rename_applied',oldName:currentSaved,newName});}catch(e){}
       const applied=ld('att_renames_applied',{});
       applied[currentSaved]=Date.now();
       sv('att_renames_applied',applied);
     }
   }
 
+  // Use the (possibly updated) name for duplicate check
   const attendance=ld('att_records',{});
   if(attendance[name]?.[token.session]?.[token.hour]){
-    showAutoResult('warn','✅',`Already checked in for Day ${token.session+1}, Hour ${token.hour+1}.`);return;
+    showAutoResult('warn','✅',`Already checked in for Day ${token.session+1}, Hour ${token.hour+1}.`);
+    renderHistory();return;
   }
 
   if(token.geo&&token.lat!==null&&token.lng!==null){
@@ -394,7 +392,9 @@ function recordAttendance(name,si,hi,dist){
     teacherName:course.teacher||'',
   });
   previousName=null; // clear after use
-  setSavedName(name); renderNameCard();
+  // Name may have been updated by rename — ensure saved and card reflects it
+  if(getSavedName()!==name)setSavedName(name);
+  renderNameCard();
   const s=getSessions()[si];
   const geoNote=dist!==null?` · ${Math.round(dist)}m from classroom`:'';
   const dateNote=s.date?` (${fmtDate(s.date)})`:'';

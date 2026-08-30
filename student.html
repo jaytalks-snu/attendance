@@ -277,7 +277,7 @@ function sendToSheet(payload){
     clearTimeout(timer);delete window[cbName];script.remove();
     if(data&&data.status==='ok'){
       showSyncStatus('✓ Synced to Google Sheets ('+data.message+')','var(--green)');
-      // Fetch latest records from sheet now that our entry is saved
+      // 시트 저장 완료 후 해당 학생 기록만 다시 조회
       setTimeout(()=>renderHistory(), 500);
     } else {
       showSyncStatus('❌ Sheet error: '+(data&&data.message?data.message:'unknown'),'var(--red)');
@@ -446,7 +446,7 @@ function renderHistory(){
     renderGrid(localRec);
   }
 
-  // 구글 시트에서 최신 데이터 조회 (이름이 저장된 경우에만)
+  // 구글 시트에서 해당 학생 기록만 조회 (빠르고 개인정보 안전)
   const url=getScriptURL();
   if(!url)return;
 
@@ -456,20 +456,20 @@ function renderHistory(){
   window[cbName]=function(data){
     clearTimeout(timer);delete window[cbName];script.remove();
     if(!data||data.status!=='ok')return;
-    const sheetRec=data.records&&data.records[name]||{};
-    // 로컬과 시트 데이터 합치기 — 어느 쪽도 잃지 않음
+    const sheetRec=data.record||{};
+    // 로컬과 시트 데이터 합치기
     const att=ld('att_records',{});
     const merged=Object.assign({},att[name]||{});
     Object.keys(sheetRec).forEach(si=>{
       if(!merged[si])merged[si]={};
       Object.assign(merged[si],sheetRec[si]);
     });
-    // 로컬 저장 후 화면 업데이트
     att[name]=merged;
     sv('att_records',att);
     renderGrid(merged);
   };
-  script.src=url+'?action=get_records&callback='+cbName;
+  const params=new URLSearchParams({action:'get_student_records',name});
+  script.src=url+'?'+params.toString()+'&callback='+cbName;
   document.head.appendChild(script);
 }
 

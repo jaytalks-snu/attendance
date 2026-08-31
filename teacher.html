@@ -1304,7 +1304,7 @@ function copyPrevHourAttendance(){
     sessionDate:s.date||'',
     hourLabel:state.hours[toHi]?.time||('Hour '+(toHi+1)),
     checkInTime:timeStr,
-    dist:null,
+    dist:'',
     courseTitle:course.title||'',
     courseNumber:course.number||'',
     teacherName:course.teacher||'',
@@ -1412,7 +1412,6 @@ function applyManualAttendance(){
   closeManualPanel();
   setRecordsStatus(`0 / ${queue.length}건 처리 중…`,'var(--amber)');
 
-  // Send one checkin at a time — avoids URL length limits of bulk_checkin
   let idx=0;
   function sendNext(){
     if(idx>=queue.length){
@@ -1424,16 +1423,25 @@ function applyManualAttendance(){
     setRecordsStatus(`${idx+1} / ${queue.length}건 처리 중 (${item.name} · Hour ${item.hour+1})…`,'var(--amber)');
     const cbName='_mc'+Date.now()+'_'+idx;
     const script=document.createElement('script');
+    const reqUrl=buildURL(url,{action:'checkin',...item})+'&callback='+cbName;
+    console.log('Manual checkin URL:', reqUrl.substring(0,200));
     const timer=setTimeout(()=>{
       delete window[cbName];script.remove();
-      idx++;sendNext(); // timeout — skip and continue
+      console.error('Timeout for:', item.name);
+      idx++;sendNext();
     },10000);
-    window[cbName]=function(){
+    window[cbName]=function(data){
       clearTimeout(timer);delete window[cbName];script.remove();
+      console.log('Response for', item.name, ':', data);
       idx++;
-      setTimeout(sendNext,300); // small delay between requests
+      setTimeout(sendNext,300);
     };
-    script.src=buildURL(url,{action:'checkin',...item})+'&callback='+cbName;
+    script.onerror=function(e){
+      clearTimeout(timer);delete window[cbName];script.remove();
+      console.error('Script error for', item.name, ':', e, 'URL:', reqUrl.substring(0,200));
+      setRecordsStatus(`❌ 오류 (${item.name}) — F12 콘솔을 확인하세요`,'var(--red)');
+    };
+    script.src=reqUrl;
     document.head.appendChild(script);
   }
   sendNext();

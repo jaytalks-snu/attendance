@@ -367,12 +367,34 @@
   <!-- Settings Tab -->
   <div id="panel-settings" class="panel">
 
+    <!-- System Status Dashboard -->
+    <div class="section-label">System status</div>
+    <div class="card" id="dashboard-card">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px;">
+        <div class="stat"><div class="stat-num" id="dash-students">—</div><div class="stat-lbl">students</div></div>
+        <div class="stat"><div class="stat-num" id="dash-checkins">—</div><div class="stat-lbl">check-ins</div></div>
+        <div class="stat"><div class="stat-num" id="dash-last">—</div><div class="stat-lbl">last check-in</div></div>
+      </div>
+      <div style="font-size:11px;font-family:monospace;margin-bottom:10px;" id="dash-connection">
+        <span id="dash-conn-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--text-faint);margin-right:6px;"></span>
+        <span id="dash-conn-label">연결 상태 확인 중…</span>
+      </div>
+      <div class="btn-row" style="justify-content:flex-start;flex-wrap:wrap;">
+        <button class="btn btn-sm" onclick="refreshDashboard()">↺ Refresh status</button>
+        <button class="btn btn-sm" id="sheet-link-btn" onclick="openGoogleSheet()" style="display:none;">📊 Open Google Sheet</button>
+      </div>
+    </div>
+
     <div class="section-label">Google Sheets sync</div>
     <div class="card">
       <div class="settings-note" style="margin-bottom:10px;">Paste your Apps Script Web App URL here to sync attendance to Google Sheets automatically.</div>
       <div class="field-group">
         <div class="field-label">Apps Script Web App URL</div>
         <input type="text" id="script-url" placeholder="https://script.google.com/macros/s/…/exec" style="width:100%;font-size:11px;" oninput="saveScriptURL()">
+      </div>
+      <div class="field-group">
+        <div class="field-label">Google Sheet URL (for direct access)</div>
+        <input type="text" id="sheet-url" placeholder="https://docs.google.com/spreadsheets/d/…" style="width:100%;font-size:11px;" oninput="saveSheetURL()">
       </div>
       <div class="field-group">
         <div class="field-label">Secret Key (must match Apps Script) — 영문과 숫자만 사용</div>
@@ -491,6 +513,10 @@ function initApp(){
   document.getElementById('teacher-name').value=state.teacherName;
   document.getElementById('script-url').value=localStorage.getItem('att_script_url')||'';
   document.getElementById('secret-key').value=getSecretKey();
+  const sheetUrl=localStorage.getItem('att_sheet_url')||'';
+  document.getElementById('sheet-url').value=sheetUrl;
+  const sheetBtn=document.getElementById('sheet-link-btn');
+  if(sheetBtn)sheetBtn.style.display=sheetUrl?'inline-flex':'none';
   document.getElementById('geo-radius').addEventListener('input',updateGeoBadge);
   updateHeader(); renderSessionChips(); renderSessionsTable(); renderHourTimeInputs();
   applyTestMode();
@@ -672,6 +698,81 @@ function saveScriptURL(){
   msg.textContent=url?'URL saved.':'';
 }
 
+function saveSheetURL(){
+  const url=document.getElementById('sheet-url').value.trim();
+  localStorage.setItem('att_sheet_url',url);
+  const btn=document.getElementById('sheet-link-btn');
+  if(btn)btn.style.display=url?'inline-flex':'none';
+}
+
+function openGoogleSheet(){
+  const url=localStorage.getItem('att_sheet_url')||'';
+  if(url)window.open(url,'_blank');
+}
+
+// ── System status dashboard ───────────────────────────────────────────────────
+function refreshDashboard(){
+  const url=localStorage.getItem('att_script_url')||'';
+  const connDot=document.getElementById('dash-conn-dot');
+  const connLabel=document.getElementById('dash-conn-label');
+
+  // Update local stats immediately
+  const att=state.attendance||{};
+  const students=Object.keys(att);
+  let totalCI=0, lastTime='', lastTs=0;
+  students.forEach(name=>{
+    Object.values(att[name]||{}).forEach(sr=>{
+      Object.values(sr||{}).forEach(r=>{
+        totalCI++;
+        if(r.time&&r.time>lastTime){lastTime=r.time;}
+      });
+    });
+  });
+  document.getElementById('dash-students').textContent=students.length||'0';
+  document.getElementById('dash-checkins').textContent=totalCI||'0';
+  document.getElementById('dash-last').textContent=lastTime||'—';
+
+  if(!url){
+    connDot.style.background='var(--red)';
+    connLabel.textContent='구글 시트 미연결';
+    return;
+  }
+
+  connDot.style.background='var(--amber)';
+  connLabel.textContent='연결 확인 중…';
+
+  // Check connection via get_records
+  jsonpFetch(buildURL(url,{action:'get_records'}),(data,err)=>{
+    if(err||!data||data.status!=='ok'){
+      connDot.style.background='var(--red)';
+      connLabel.textContent='연결 오류 — Script URL 또는 Secret Key를 확인하세요';
+      return;
+    }
+    connDot.style.background='var(--green)';
+    const rec=data.records||{};
+    const s=Object.keys(rec);
+    let ci=0, lt='';
+    s.forEach(name=>{
+      Object.values(rec[name]||{}).forEach(sr=>{
+        Object.values(sr||{}).forEach(r=>{ci++;if(r.time>lt)lt=r.time;});
+      });
+    });
+    document.getElementById('dash-students').textContent=s.length;
+    document.getElementById('dash-checkins').textContent=ci;
+    document.getElementById('dash-last').textContent=lt||'—';
+    connLabel.textContent='✓ 구글 시트 연결됨 · '+new Date().toLocaleTimeString();
+    // Also update local state
+    renderRecordsFromData(rec);
+  });
+}
+
+// Refresh dashboard when switching to Settings tab
+const _origSwitchTab=switchTab;
+function switchTab(tab){
+  _origSwitchTab(tab);
+  if(tab==='settings')setTimeout(refreshDashboard,100);
+}
+
 function saveSecretKey(){
   const key=document.getElementById('secret-key').value.trim();
   localStorage.setItem('att_secret_key',key);
@@ -714,6 +815,7 @@ function saveSettingsToSheet(){
     courseNumber:state.courseNumber||'',
     teacherName:state.teacherName||'',
     scriptUrl:url,
+    sheetUrl:localStorage.getItem('att_sheet_url')||'',
     secretKey:getSecretKey(),
     classroomLat:state.classroomLat||'',
     classroomLng:state.classroomLng||'',
@@ -750,6 +852,12 @@ function loadSettingsFromSheet(){
     if(s.courseNumber){state.courseNumber=s.courseNumber;document.getElementById('course-number').value=s.courseNumber;}
     if(s.teacherName){state.teacherName=s.teacherName;document.getElementById('teacher-name').value=s.teacherName;}
     if(s.secretKey){localStorage.setItem('att_secret_key',s.secretKey);document.getElementById('secret-key').value=s.secretKey;}
+    if(s.sheetUrl){
+      localStorage.setItem('att_sheet_url',s.sheetUrl);
+      document.getElementById('sheet-url').value=s.sheetUrl;
+      const btn=document.getElementById('sheet-link-btn');
+      if(btn)btn.style.display=s.sheetUrl?'inline-flex':'none';
+    }
     if(s.classroomLat&&s.classroomLng){
       state.classroomLat=parseFloat(s.classroomLat);
       state.classroomLng=parseFloat(s.classroomLng);
@@ -1078,8 +1186,40 @@ function exportCSV(){
 }
 
 function clearRecords(){
-  if(!confirm('Clear ALL attendance for all sessions? This clears local data only — delete rows in Google Sheets manually if needed.'))return;
-  state.attendance={};sv('att_records',{});renderRecords();renderSessionChips();
+  if(!confirm('모든 출석 데이터를 삭제할까요?\n\n• 구글 시트 Attendance Log\n• 구글 시트 Summary\n• 구글 시트 Renames\n• 로컬 데이터\n\n이 작업은 되돌릴 수 없습니다.'))return;
+
+  const url=localStorage.getItem('att_script_url')||'';
+
+  // Clear local data immediately
+  state.attendance={};
+  sv('att_records',{});
+  sv('att_renames',{});
+  renderRecords();
+  renderSessionChips();
+  updateRenameBanner();
+
+  if(!url){
+    setRecordsStatus('로컬 데이터만 삭제됨 — 구글 시트는 수동으로 삭제하세요','var(--amber)');
+    return;
+  }
+
+  setRecordsStatus('구글 시트 데이터 삭제 중…','var(--amber)');
+  const cbName='_ca'+Date.now();
+  const script=document.createElement('script');
+  const timer=setTimeout(()=>{
+    delete window[cbName];script.remove();
+    setRecordsStatus('시간 초과 — 구글 시트를 직접 확인하세요','var(--red)');
+  },15000);
+  window[cbName]=function(data){
+    clearTimeout(timer);delete window[cbName];script.remove();
+    if(data&&data.status==='ok'){
+      setRecordsStatus('✓ 모든 데이터 삭제 완료','var(--green)');
+    } else {
+      setRecordsStatus('오류: '+(data&&data.message||'알 수 없음'),'var(--red)');
+    }
+  };
+  script.src=buildURL(url,{action:'clear_all'})+'&callback='+cbName;
+  document.head.appendChild(script);
 }
 
 // ── Rename reminder banner ────────────────────────────────────────────────────
@@ -1205,6 +1345,38 @@ function toggleAttendanceDot(name, si, hi, currentlyPresent){
   document.head.appendChild(script);
 }
 
+function deleteStudentRecords(name){
+  if(!confirm(`"${name}"의 모든 출석 기록을 삭제할까요?\n이 작업은 되돌릴 수 없습니다.`))return;
+  const url=localStorage.getItem('att_script_url')||'';
+
+  // Remove from local state
+  const att=ld('att_records',{});
+  delete att[name];
+  sv('att_records',att);
+  closeDetailPanel();
+
+  if(!url){
+    setRecordsStatus(`"${name}" 로컬 기록 삭제됨 — 구글 시트는 수동 삭제 필요`,'var(--amber)');
+    renderRecords();return;
+  }
+
+  setRecordsStatus(`"${name}" 기록 삭제 중…`,'var(--amber)');
+  const cbName='_ds'+Date.now();
+  const script=document.createElement('script');
+  const timer=setTimeout(()=>{delete window[cbName];script.remove();setRecordsStatus('시간 초과','var(--red)');},15000);
+  window[cbName]=function(data){
+    clearTimeout(timer);delete window[cbName];script.remove();
+    if(data&&data.status==='ok'){
+      setRecordsStatus(`✓ "${name}" 기록 삭제 완료 (${data.message})`,'var(--green)');
+    } else {
+      setRecordsStatus('오류: '+(data&&data.message||'알 수 없음'),'var(--red)');
+    }
+    setTimeout(()=>renderRecords(),1000);
+  };
+  script.src=buildURL(url,{action:'delete_student',name})+'&callback='+cbName;
+  document.head.appendChild(script);
+}
+
 // ── Student detail panel ──────────────────────────────────────────────────────
 function openDetailPanel(name){
   const rec=state.attendance[name]||{};
@@ -1217,7 +1389,8 @@ function openDetailPanel(name){
 
   document.getElementById('detail-name').innerHTML=`
     <span id="detail-name-text">👤 ${name}</span>
-    <button class="btn btn-sm" style="margin-left:10px;font-size:11px;" onclick="startRenameStudent('${name.replace(/'/g,"\\'")}')">이름 수정</button>`;
+    <button class="btn btn-sm" style="margin-left:10px;font-size:11px;" onclick="startRenameStudent('${name.replace(/'/g,"\\'")}')">이름 수정</button>
+    <button class="btn btn-sm btn-danger" style="margin-left:6px;font-size:11px;" onclick="deleteStudentRecords('${name.replace(/'/g,"\\'")}')">🗑 기록 삭제</button>`;
   document.getElementById('detail-stats').innerHTML=
     `출석 ${tot}/${pos}시간 &nbsp;·&nbsp; <span style="color:${col};font-weight:500;">${pct}%</span>`;
 

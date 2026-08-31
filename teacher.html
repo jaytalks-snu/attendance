@@ -1152,7 +1152,7 @@ function toggleAttendanceDot(name, si, hi, currentlyPresent){
   const s=state.sessions[si];
   const course=ld('att_course_pub',{});
   const now=new Date();
-  const timeStr=now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const timeStr=now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true});
   const dayLabel=`Day ${si+1}${s.date?' ('+fmtDate(s.date)+')':''}`;
   const hourLabel=`Hour ${hi+1}`;
 
@@ -1362,7 +1362,7 @@ function copyPrevHourAttendance(){
   if(!confirmed)return;
 
   const now=new Date();
-  const timeStr=now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const timeStr=now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true});
 
   const items=targets.map(name=>({
     name,
@@ -1454,7 +1454,7 @@ function applyManualAttendance(){
   }
 
   const now=new Date();
-  const timeStr=now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const timeStr=now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true});
   const dayLabel=`Day ${si+1}${s.date?' ('+fmtDate(s.date)+')':''}`;
   const hourLabel2=hiVal==='all'?'전체 4시간':`Hour ${parseInt(hiVal)+1}`;
   const targetLabel2=manualTarget.name?`"${manualTarget.name}"`:

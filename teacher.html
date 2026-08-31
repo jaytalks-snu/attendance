@@ -123,17 +123,17 @@
   .stat-num { font-size: 20px; font-family: monospace; }
   .stat-lbl { font-size: 10px; color: var(--text-muted); margin-top: 2px; font-family: monospace; }
   .rec-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  .rec-table th { font-family: monospace; font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.05em; padding: 8px; border-bottom: 1px solid var(--border); text-align: left; font-weight: normal; white-space: nowrap; }
-  .rec-table td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .rec-table th { font-family: monospace; font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.05em; padding: 6px 4px; border-bottom: 1px solid var(--border); text-align: left; font-weight: normal; white-space: nowrap; }
+  .rec-table td { padding: 6px 4px; border-bottom: 1px solid var(--border); vertical-align: middle; }
   .rec-table tr:last-child td { border-bottom: none; }
   .rec-table tr:hover td { background: var(--surface2); }
   .mini-dot { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; font-size: 9px; border: 1px solid var(--border); font-family: monospace; }
   .mini-dot.p { background: var(--green-bg); color: var(--green); border-color: var(--green-border); }
   /* 4-dot session view */
-  .session-dots { display: inline-flex; gap: 3px; align-items: center; }
-  .session-dot { width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid var(--border-strong); cursor: pointer; transition: all 0.15s; flex-shrink: 0; }
+  .session-dots { display: inline-flex; gap: 2px; align-items: center; }
+  .session-dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--border-strong); cursor: pointer; transition: all 0.15s; flex-shrink: 0; }
   .session-dot.p { background: var(--green); border-color: var(--green); }
-  .session-dot:hover { transform: scale(1.3); opacity: 0.8; }
+  .session-dot:hover { transform: scale(1.4); opacity: 0.8; }
   .filter-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
   .filter-bar select { padding: 6px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius); font-size: 12px; background: var(--surface); color: var(--text); font-family: monospace; }
   .empty-state { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 13px; font-family: monospace; }
@@ -1330,11 +1330,12 @@ function updateCopyPreview(){
   const fromHi=parseInt(document.getElementById('copy-from-hour').value);
   const toHi=parseInt(document.getElementById('copy-to-hour').value);
   const s=state.sessions[si];
+  const dayLabel=`Day ${si+1}${s.date?' ('+fmtDate(s.date)+')':''}`;
   const attendance=state.attendance||{};
   const students=Object.keys(attendance).filter(name=>attendance[name]?.[si]?.[fromHi]);
   const el=document.getElementById('copy-preview');
   if(!el)return;
-  el.textContent=`Hour ${fromHi+1} 출석자 ${students.length}명 → Hour ${toHi+1}로 복사`;
+  el.textContent=`${dayLabel} · Hour ${fromHi+1} 출석자 ${students.length}명 → Hour ${toHi+1}로 복사`;
 }
 
 function copyPrevHourAttendance(){
@@ -1348,23 +1349,21 @@ function copyPrevHourAttendance(){
 
   const url=localStorage.getItem('att_script_url')||'';
   const s=state.sessions[si];
+  const dayLabel=`Day ${si+1}${s.date?' ('+fmtDate(s.date)+')':''}`;
   const course=ld('att_course_pub',{});
   const attendance=state.attendance||{};
-
-  // Find students who attended the source hour
   const targets=Object.keys(attendance).filter(name=>attendance[name]?.[si]?.[fromHi]);
 
   if(!targets.length){
     alert(`Hour ${fromHi+1}에 출석한 학생이 없습니다.`);return;
   }
 
-  const confirmed=confirm(`Hour ${fromHi+1} 출석자 ${targets.length}명을 Hour ${toHi+1}에도 출석 처리할까요?\n\n${targets.join('\n')}`);
+  const confirmed=confirm(`${dayLabel}\nHour ${fromHi+1} 출석자 ${targets.length}명을 Hour ${toHi+1}에도 출석 처리할까요?\n\n${targets.join('\n')}`);
   if(!confirmed)return;
 
   const now=new Date();
   const timeStr=now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 
-  // Build items for bulk request
   const items=targets.map(name=>({
     name,
     previousName:'',
@@ -1379,18 +1378,19 @@ function copyPrevHourAttendance(){
     teacherName:course.teacher||'',
   }));
 
-  setRecordsStatus(`Hour ${fromHi+1} → Hour ${toHi+1} 복사 중 (${items.length}명)…`,'var(--amber)');
+  setRecordsStatus(`${dayLabel} · Hour ${fromHi+1} → Hour ${toHi+1} 복사 중 (${items.length}명)…`,'var(--amber)');
   closeManualPanel();
 
   let idx=0;
   function sendNext(){
     if(idx>=items.length){
-      setRecordsStatus(`✓ ${items.length}명 복사 완료`,'var(--green)');
-      setTimeout(()=>renderRecords(),1500);
+      setRecordsStatus(`✓ ${dayLabel} · Hour ${fromHi+1} → Hour ${toHi+1} · ${items.length}명 복사 완료`,'var(--green)');
+      renderRecords(); // 즉시 refresh — 대기 없음
       return;
     }
     const item=items[idx];
     const isLast=idx===items.length-1;
+    setRecordsStatus(`${dayLabel} · Hour ${fromHi+1} → Hour ${toHi+1} — ${idx+1} / ${items.length}건 처리 중 (${item.name})…`,'var(--amber)');
     const cbName='_cp'+Date.now()+'_'+idx;
     const script=document.createElement('script');
     const timer=setTimeout(()=>{delete window[cbName];script.remove();idx++;sendNext();},10000);

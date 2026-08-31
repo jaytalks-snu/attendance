@@ -540,16 +540,6 @@ function updateHeader(){
   sv('att_course_pub',{title:state.courseTitle,number:state.courseNumber,teacher:state.teacherName});
 }
 
-// ── Tabs ──────────────────────────────────────────────────────────────────────
-const TABS=['qr','records','sessions','settings'];
-function switchTab(tab){
-  TABS.forEach((t,i)=>{
-    document.querySelectorAll('.tab')[i].classList.toggle('active',t===tab);
-    document.getElementById('panel-'+t).classList.toggle('active',t===tab);
-  });
-  if(tab==='records')renderRecords();
-  if(tab==='qr')updateRenameBanner();
-}
 // ── Session chips ─────────────────────────────────────────────────────────────
 function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
 function fmtDate(iso){if(!iso)return 'No date';const[y,m,d]=iso.split('-');return new Date(y,m-1,d).toLocaleDateString(undefined,{month:'short',day:'numeric'});}
@@ -767,9 +757,14 @@ function refreshDashboard(){
 }
 
 // Refresh dashboard when switching to Settings tab
-const _origSwitchTab=switchTab;
+const TABS=['qr','records','sessions','settings'];
 function switchTab(tab){
-  _origSwitchTab(tab);
+  TABS.forEach((t,i)=>{
+    document.querySelectorAll('.tab')[i].classList.toggle('active',t===tab);
+    document.getElementById('panel-'+t).classList.toggle('active',t===tab);
+  });
+  if(tab==='records')renderRecords();
+  if(tab==='qr')updateRenameBanner();
   if(tab==='settings')setTimeout(refreshDashboard,100);
 }
 

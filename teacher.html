@@ -1219,7 +1219,6 @@ function applyRenameStudent(oldName, newName){
   }
 
   // Update Google Sheet via rename action
-  const params=new URLSearchParams({action:'rename',oldName,newName});
   const cbName='_rn'+Date.now();
   const script=document.createElement('script');
   const timer=setTimeout(()=>{
@@ -1235,7 +1234,7 @@ function applyRenameStudent(oldName, newName){
     }
     setTimeout(()=>renderRecords(),1000);
   };
-  script.src=url+'?'+params.toString()+'&callback='+cbName;
+  script.src=buildURL(url,{action:'rename',oldName,newName})+'&callback='+cbName;
   document.head.appendChild(script);
 }
 
@@ -1314,32 +1313,23 @@ function copyPrevHourAttendance(){
   setRecordsStatus(`Hour ${fromHi+1} → Hour ${toHi+1} 복사 중 (${items.length}명)…`,'var(--amber)');
   closeManualPanel();
 
-  // Send as single bulk request
-  const cbName='_copy'+Date.now();
-  const script=document.createElement('script');
-  const timer=setTimeout(()=>{
-    delete window[cbName];script.remove();
-    setRecordsStatus('시간 초과 — Refresh를 눌러 확인해 주세요.','var(--red)');
-  },60000);
-  window[cbName]=function(data){
-    clearTimeout(timer);delete window[cbName];script.remove();
-    if(data&&data.status==='ok'){
+  // Send one at a time to avoid URL length limits
+  let idx=0;
+  function sendNext(){
+    if(idx>=items.length){
       setRecordsStatus(`✓ ${items.length}명 복사 완료`,'var(--green)');
-    }else{
-      setRecordsStatus('오류: '+(data&&data.message||'알 수 없는 오류'),'var(--red)');
+      setTimeout(()=>renderRecords(),1500);
+      return;
     }
-    setTimeout(()=>renderRecords(),1500);
-  };
-  script.onerror=function(){
-    clearTimeout(timer);delete window[cbName];script.remove();
-    setRecordsStatus('연결 오류','var(--red)');
-  };
-  const params=new URLSearchParams({
-    action:'bulk_checkin',
-    items:JSON.stringify(items),
-  });
-  script.src=url+'?'+params.toString()+'&callback='+cbName;
-  document.head.appendChild(script);
+    const item=items[idx];
+    const cbName='_cp'+Date.now()+'_'+idx;
+    const script=document.createElement('script');
+    const timer=setTimeout(()=>{delete window[cbName];script.remove();idx++;sendNext();},10000);
+    window[cbName]=function(){clearTimeout(timer);delete window[cbName];script.remove();idx++;setTimeout(sendNext,300);};
+    script.src=buildURL(url,{action:'checkin',...item})+'&callback='+cbName;
+    document.head.appendChild(script);
+  }
+  sendNext();
 }
 
 function openManualPanel(si,hi,name){
@@ -1397,11 +1387,11 @@ function applyManualAttendance(){
   const now=new Date();
   const timeStr=now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 
-  // Build all items into one array — sent as a single request
-  const items=[];
+  // Build flat queue of individual checkin requests
+  const queue=[];
   targets.forEach(name=>{
     hours.forEach(hi=>{
-      items.push({
+      queue.push({
         name,
         previousName:'',
         session:si,
@@ -1409,7 +1399,7 @@ function applyManualAttendance(){
         sessionDate:s.date||'',
         hourLabel:state.hours[hi]?.time||('Hour '+(hi+1)),
         checkInTime:timeStr,
-        dist:null,
+        dist:'',
         courseTitle:course.title||'',
         courseNumber:course.number||'',
         teacherName:course.teacher||'',
@@ -1417,41 +1407,36 @@ function applyManualAttendance(){
     });
   });
 
-  if(!items.length){alert('출석 처리할 항목이 없습니다.');return;}
+  if(!queue.length){alert('출석 처리할 항목이 없습니다.');return;}
 
   closeManualPanel();
-  setRecordsStatus(`${items.length}건 처리 중…`,'var(--amber)');
+  setRecordsStatus(`0 / ${queue.length}건 처리 중…`,'var(--amber)');
 
-  // Send all items in ONE request via bulk_checkin
-  const cbName='_bulk'+Date.now();
-  const script=document.createElement('script');
-  const timer=setTimeout(()=>{
-    delete window[cbName];script.remove();
-    setRecordsStatus('처리 시간 초과 — 잠시 후 Refresh를 눌러 확인해 주세요.','var(--red)');
-  },60000);
-
-  window[cbName]=function(data){
-    clearTimeout(timer);delete window[cbName];script.remove();
-    if(data&&data.status==='ok'){
-      const count=data.results?data.results.length:items.length;
-      setRecordsStatus(`✓ ${count}건 처리 완료`,'var(--green)');
-    } else {
-      setRecordsStatus('오류: '+(data&&data.message?data.message:'알 수 없는 오류'),'var(--red)');
+  // Send one checkin at a time — avoids URL length limits of bulk_checkin
+  let idx=0;
+  function sendNext(){
+    if(idx>=queue.length){
+      setRecordsStatus(`✓ ${queue.length}건 처리 완료`,'var(--green)');
+      setTimeout(()=>renderRecords(),1500);
+      return;
     }
-    setTimeout(()=>renderRecords(),1500);
-  };
-
-  script.onerror=function(){
-    clearTimeout(timer);delete window[cbName];script.remove();
-    setRecordsStatus('연결 오류 — URL을 확인해 주세요.','var(--red)');
-  };
-
-  const params=new URLSearchParams({
-    action:'bulk_checkin',
-    items:JSON.stringify(items),
-  });
-  script.src=url+'?'+params.toString()+'&callback='+cbName;
-  document.head.appendChild(script);
+    const item=queue[idx];
+    setRecordsStatus(`${idx+1} / ${queue.length}건 처리 중 (${item.name} · Hour ${item.hour+1})…`,'var(--amber)');
+    const cbName='_mc'+Date.now()+'_'+idx;
+    const script=document.createElement('script');
+    const timer=setTimeout(()=>{
+      delete window[cbName];script.remove();
+      idx++;sendNext(); // timeout — skip and continue
+    },10000);
+    window[cbName]=function(){
+      clearTimeout(timer);delete window[cbName];script.remove();
+      idx++;
+      setTimeout(sendNext,300); // small delay between requests
+    };
+    script.src=buildURL(url,{action:'checkin',...item})+'&callback='+cbName;
+    document.head.appendChild(script);
+  }
+  sendNext();
 }
 
 // Start polling

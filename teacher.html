@@ -1496,22 +1496,18 @@ function applyManualAttendance(){
     const cbName='_mc'+Date.now()+'_'+idx;
     const script=document.createElement('script');
     const reqUrl=buildURL(url,{action:'checkin',...item,skipSummary:isLast?'false':'true'})+'&callback='+cbName;
-    console.log('Manual checkin URL:', reqUrl.substring(0,200));
     const timer=setTimeout(()=>{
       delete window[cbName];script.remove();
-      console.error('Timeout for:', item.name);
       idx++;sendNext();
     },10000);
     window[cbName]=function(data){
       clearTimeout(timer);delete window[cbName];script.remove();
-      console.log('Response for', item.name, ':', data);
       idx++;
       setTimeout(sendNext,100);
     };
-    script.onerror=function(e){
+    script.onerror=function(){
       clearTimeout(timer);delete window[cbName];script.remove();
-      console.error('Script error for', item.name, ':', e, 'URL:', reqUrl.substring(0,200));
-      setRecordsStatus(`❌ 오류 (${item.name}) — F12 콘솔을 확인하세요`,'var(--red)');
+      setRecordsStatus(`❌ 오류 (${item.name}) — 잠시 후 다시 시도해주세요`,'var(--red)');
     };
     script.src=reqUrl;
     document.head.appendChild(script);

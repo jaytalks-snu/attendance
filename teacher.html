@@ -1153,30 +1153,39 @@ function toggleAttendanceDot(name, si, hi, currentlyPresent){
   const course=ld('att_course_pub',{});
   const now=new Date();
   const timeStr=now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const dayLabel=`Day ${si+1}${s.date?' ('+fmtDate(s.date)+')':''}`;
+  const hourLabel=`Hour ${hi+1}`;
 
   if(currentlyPresent){
-    // Remove attendance — not yet supported via API, show manual sheet instruction
-    if(!confirm(`${name}의 Day ${si+1} Hour ${hi+1} 출석을 취소할까요?\n구글 시트에서 해당 행을 직접 삭제해야 합니다.`))return;
-    // Remove from local state only — sheet requires manual deletion
-    const att=ld('att_records',{});
-    if(att[name]&&att[name][si]){
-      delete att[name][si][hi];
-      sv('att_records',att);
-    }
-    renderRecords();
-    setRecordsStatus('로컬에서 제거됨 — 구글 시트에서도 해당 행을 삭제하세요','var(--amber)');
+    // Delete from sheet
+    if(!confirm(`${name}\n${dayLabel} · ${hourLabel} 출석을 취소할까요?`))return;
+    setRecordsStatus(`${name} · ${dayLabel} · ${hourLabel} 출석 취소 중…`,'var(--amber)');
+    const cbName='_del'+Date.now();
+    const script=document.createElement('script');
+    const timer=setTimeout(()=>{delete window[cbName];script.remove();setRecordsStatus('시간 초과','var(--red)');},10000);
+    window[cbName]=function(data){
+      clearTimeout(timer);delete window[cbName];script.remove();
+      if(data&&data.status==='ok'){
+        setRecordsStatus(`✓ ${name} · ${dayLabel} · ${hourLabel} 출석 취소 완료`,'var(--green)');
+        setTimeout(()=>renderRecords(),1000);
+      } else {
+        setRecordsStatus('오류: '+(data&&data.message||'알 수 없음'),'var(--red)');
+      }
+    };
+    script.src=buildURL(url,{action:'delete_checkin',name,session:si,hour:hi})+'&callback='+cbName;
+    document.head.appendChild(script);
     return;
   }
 
-  // Add attendance via checkin
-  setRecordsStatus(`${name} · Day ${si+1} Hour ${hi+1} 출석 처리 중…`,'var(--amber)');
+  // Add attendance
+  setRecordsStatus(`${name} · ${dayLabel} · ${hourLabel} 출석 처리 중…`,'var(--amber)');
   const cbName='_dot'+Date.now();
   const script=document.createElement('script');
   const timer=setTimeout(()=>{delete window[cbName];script.remove();setRecordsStatus('시간 초과','var(--red)');},10000);
   window[cbName]=function(data){
     clearTimeout(timer);delete window[cbName];script.remove();
     if(data&&data.status==='ok'){
-      setRecordsStatus(`✓ ${name} · Day ${si+1} Hour ${hi+1} 출석 처리 완료`,'var(--green)');
+      setRecordsStatus(`✓ ${name} · ${dayLabel} · ${hourLabel} 출석 처리 완료`,'var(--green)');
       setTimeout(()=>renderRecords(),1000);
     } else {
       setRecordsStatus('오류: '+(data&&data.message||'알 수 없음'),'var(--red)');
@@ -1385,7 +1394,7 @@ function copyPrevHourAttendance(){
     const cbName='_cp'+Date.now()+'_'+idx;
     const script=document.createElement('script');
     const timer=setTimeout(()=>{delete window[cbName];script.remove();idx++;sendNext();},10000);
-    window[cbName]=function(){clearTimeout(timer);delete window[cbName];script.remove();idx++;setTimeout(sendNext,300);};
+    window[cbName]=function(){clearTimeout(timer);delete window[cbName];script.remove();idx++;setTimeout(sendNext,100);};
     script.src=buildURL(url,{action:'checkin',...item,skipSummary:isLast?'false':'true'})+'&callback='+cbName;
     document.head.appendChild(script);
   }
@@ -1446,8 +1455,10 @@ function applyManualAttendance(){
 
   const now=new Date();
   const timeStr=now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-
-  // Build flat queue of individual checkin requests
+  const dayLabel=`Day ${si+1}${s.date?' ('+fmtDate(s.date)+')':''}`;
+  const hourLabel2=hiVal==='all'?'전체 4시간':`Hour ${parseInt(hiVal)+1}`;
+  const targetLabel2=manualTarget.name?`"${manualTarget.name}"`:
+    `전체 학생 ${targets.length}명`;
   const queue=[];
   targets.forEach(name=>{
     hours.forEach(hi=>{
@@ -1470,18 +1481,18 @@ function applyManualAttendance(){
   if(!queue.length){alert('출석 처리할 항목이 없습니다.');return;}
 
   closeManualPanel();
-  setRecordsStatus(`0 / ${queue.length}건 처리 중…`,'var(--amber)');
+  setRecordsStatus(`${targetLabel2} · ${dayLabel} · ${hourLabel2} — 0 / ${queue.length}건 처리 중…`,'var(--amber)');
 
   let idx=0;
   function sendNext(){
     if(idx>=queue.length){
-      setRecordsStatus(`✓ ${queue.length}건 처리 완료`,'var(--green)');
+      setRecordsStatus(`✓ ${targetLabel2} · ${dayLabel} · ${hourLabel2} — ${queue.length}건 완료`,'var(--green)');
       setTimeout(()=>renderRecords(),1500);
       return;
     }
     const item=queue[idx];
     const isLast=idx===queue.length-1;
-    setRecordsStatus(`${idx+1} / ${queue.length}건 처리 중 (${item.name} · Hour ${item.hour+1})…`,'var(--amber)');
+    setRecordsStatus(`${dayLabel} · ${hourLabel2} — ${idx+1} / ${queue.length}건 처리 중 (${item.name} · Hour ${item.hour+1})…`,'var(--amber)');
     const cbName='_mc'+Date.now()+'_'+idx;
     const script=document.createElement('script');
     const reqUrl=buildURL(url,{action:'checkin',...item,skipSummary:isLast?'false':'true'})+'&callback='+cbName;
@@ -1495,7 +1506,7 @@ function applyManualAttendance(){
       clearTimeout(timer);delete window[cbName];script.remove();
       console.log('Response for', item.name, ':', data);
       idx++;
-      setTimeout(sendNext,300);
+      setTimeout(sendNext,100);
     };
     script.onerror=function(e){
       clearTimeout(timer);delete window[cbName];script.remove();

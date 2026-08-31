@@ -700,61 +700,7 @@ function openGoogleSheet(){
   if(url)window.open(url,'_blank');
 }
 
-// ── System status dashboard ───────────────────────────────────────────────────
-function refreshDashboard(){
-  const url=localStorage.getItem('att_script_url')||'';
-  const connDot=document.getElementById('dash-conn-dot');
-  const connLabel=document.getElementById('dash-conn-label');
-
-  // Update local stats immediately
-  const att=state.attendance||{};
-  const students=Object.keys(att);
-  let totalCI=0, lastTime='', lastTs=0;
-  students.forEach(name=>{
-    Object.values(att[name]||{}).forEach(sr=>{
-      Object.values(sr||{}).forEach(r=>{
-        totalCI++;
-        if(r.time&&r.time>lastTime){lastTime=r.time;}
-      });
-    });
-  });
-  document.getElementById('dash-students').textContent=students.length||'0';
-  document.getElementById('dash-checkins').textContent=totalCI||'0';
-  document.getElementById('dash-last').textContent=lastTime||'—';
-
-  if(!url){
-    connDot.style.background='var(--red)';
-    connLabel.textContent='구글 시트 미연결';
-    return;
-  }
-
-  connDot.style.background='var(--amber)';
-  connLabel.textContent='연결 확인 중…';
-
-  // Check connection via get_records
-  jsonpFetch(buildURL(url,{action:'get_records'}),(data,err)=>{
-    if(err||!data||data.status!=='ok'){
-      connDot.style.background='var(--red)';
-      connLabel.textContent='연결 오류 — Script URL 또는 Secret Key를 확인하세요';
-      return;
-    }
-    connDot.style.background='var(--green)';
-    const rec=data.records||{};
-    const s=Object.keys(rec);
-    let ci=0, lt='';
-    s.forEach(name=>{
-      Object.values(rec[name]||{}).forEach(sr=>{
-        Object.values(sr||{}).forEach(r=>{ci++;if(r.time>lt)lt=r.time;});
-      });
-    });
-    document.getElementById('dash-students').textContent=s.length;
-    document.getElementById('dash-checkins').textContent=ci;
-    document.getElementById('dash-last').textContent=lt||'—';
-    connLabel.textContent='✓ 구글 시트 연결됨 · '+new Date().toLocaleTimeString();
-    // Also update local state
-    renderRecordsFromData(rec);
-  });
-}
+// ── System status dashboard — defined after jsonpFetch below ─────────────────
 
 // Refresh dashboard when switching to Settings tab
 const TABS=['qr','records','sessions','settings'];
@@ -765,7 +711,7 @@ function switchTab(tab){
   });
   if(tab==='records')renderRecords();
   if(tab==='qr')updateRenameBanner();
-  if(tab==='settings')setTimeout(refreshDashboard,100);
+  if(tab==='settings')setTimeout(function(){if(typeof refreshDashboard==='function')refreshDashboard();},100);
 }
 
 function saveSecretKey(){
@@ -1135,9 +1081,50 @@ function jsonpFetch(url, callback){
   document.head.appendChild(script);
 }
 
-function renderRecords(){
+// ── System status dashboard ───────────────────────────────────────────────────
+function refreshDashboard(){
   const url=localStorage.getItem('att_script_url')||'';
+  const connDot=document.getElementById('dash-conn-dot');
+  const connLabel=document.getElementById('dash-conn-label');
+  const att=state.attendance||{};
+  const students=Object.keys(att);
+  let totalCI=0,lastTime='';
+  students.forEach(name=>{
+    Object.values(att[name]||{}).forEach(sr=>{
+      Object.values(sr||{}).forEach(r=>{totalCI++;if(r.time&&r.time>lastTime)lastTime=r.time;});
+    });
+  });
+  document.getElementById('dash-students').textContent=students.length||'0';
+  document.getElementById('dash-checkins').textContent=totalCI||'0';
+  document.getElementById('dash-last').textContent=lastTime||'—';
   if(!url){
+    connDot.style.background='var(--red)';
+    connLabel.textContent='구글 시트 미연결';
+    return;
+  }
+  connDot.style.background='var(--amber)';
+  connLabel.textContent='연결 확인 중…';
+  jsonpFetch(buildURL(url,{action:'get_records'}),(data,err)=>{
+    if(err||!data||data.status!=='ok'){
+      connDot.style.background='var(--red)';
+      connLabel.textContent='연결 오류 — Script URL 또는 Secret Key를 확인하세요';
+      return;
+    }
+    connDot.style.background='var(--green)';
+    const rec=data.records||{};
+    const s=Object.keys(rec);
+    let ci=0,lt='';
+    s.forEach(name=>{Object.values(rec[name]||{}).forEach(sr=>{Object.values(sr||{}).forEach(r=>{ci++;if(r.time>lt)lt=r.time;});});});
+    document.getElementById('dash-students').textContent=s.length;
+    document.getElementById('dash-checkins').textContent=ci;
+    document.getElementById('dash-last').textContent=lt||'—';
+    connLabel.textContent='✓ 구글 시트 연결됨 · '+new Date().toLocaleTimeString();
+    renderRecordsFromData(rec);
+  });
+}
+
+function renderRecords(){
+  const url=localStorage.getItem('att_script_url')||'';  if(!url){
     renderRecordsFromData(ld('att_records',{}));
     setRecordsStatus('Google Sheets not configured — showing local data only','var(--amber)');
     return;
